@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: barreldrop-mongo
+    restart: unless-stopped
+    volumes:
+      - /data/mongo:/data/db
+    networks:
+      - appnet
+
+  api:
+    build: ../api
+    container_name: barreldrop-api
+    restart: unless-stopped
+    env_file:
+      - /etc/barreldrop/api.env
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      - mongo
+    networks:
+      - appnet
+
+  frontend:
+    build: ../frontend
+    container_name: barreldrop-frontend
+    restart: unless-stopped
+    env_file:
+      - /etc/barreldrop/frontend.env
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - api
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    name: barreldrop-appnet

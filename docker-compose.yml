@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:6
+    container_name: barreldrop-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  api:
+    build: ./api
+    container_name: barreldrop-api
+    environment:
+      - PORT=4000
+      - MONGO_URI=mongodb://mongo:27017/barreldrop
+      - JWT_SECRET=change-me
+      - CORS_ORIGIN=http://localhost:5173
+      - COOKIE_SECURE=false
+      - AWS_REGION=
+      - S3_BUCKET=
+    ports:
+      - "4000:4000"
+    depends_on:
+      - mongo
+
+  frontend:
+    build: ./frontend
+    container_name: barreldrop-frontend
+    environment:
+      - VITE_API_URL=http://localhost:4000
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  mongo_data:
