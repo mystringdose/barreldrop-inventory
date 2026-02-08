@@ -16,6 +16,9 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Required behind CloudFront/reverse proxies so rate limiting and IP handling work correctly.
+app.set("trust proxy", process.env.TRUST_PROXY || 1);
+
 app.use(
   cors({
     origin: process.env.CORS_ORIGIN || "http://localhost:5173",
