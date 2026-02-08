@@ -21,12 +21,19 @@ export async function login(email, password) {
   try {
     const { user } = await api.login(email, password);
     authStore.set({ user, loading: false, error: null });
+    location.hash = user?.forcePasswordChange ? "#/change-password" : "#/";
   } catch (err) {
     authStore.set({ user: null, loading: false, error: err.message || "Login failed" });
   }
 }
 
 export async function logout() {
-  await api.logout();
-  authStore.set({ user: null, loading: false, error: null });
+  try {
+    await api.logout();
+  } catch (err) {
+    // Clear local auth state even if the network call fails.
+  } finally {
+    authStore.set({ user: null, loading: false, error: null });
+    location.hash = "#/";
+  }
 }
