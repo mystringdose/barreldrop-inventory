@@ -1,15 +1,15 @@
 name: Build and Push Images to ECR
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "api/**"
-      - "frontend/**"
-      - "mongo/**"
-      - ".github/workflows/build-and-push-ecr.yml"
+  release:
+    types:
+      - published
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to publish (default: latest)"
+        required: false
+        default: "latest"
 
 permissions:
   id-token: write
@@ -43,6 +43,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve image tag
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "image_tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image_tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -75,4 +84,5 @@ jobs:
           provenance: false
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ steps.repo.outputs.repository }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.repo.outputs.repository }}:${{ steps.meta.outputs.image_tag }}
             ${{ steps.login-ecr.outputs.registry }}/${{ steps.repo.outputs.repository }}:latest
