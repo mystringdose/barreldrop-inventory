@@ -2,7 +2,7 @@
 
 This creates:
 - EC2 (Amazon Linux 2023) with Docker Compose
-- EBS volume mounted at `/data` for MongoDB
+- EBS volume mounted at `/data` for MongoDB and invoice uploads
 - App deployment from a GitHub repository/branch on EC2
 - Two CloudFront distributions:
 - `inventory.barreldrop.co.zw` -> EC2 origin port `80`
@@ -28,9 +28,9 @@ Create parameters at `/barreldrop/prod`:
 - `JWT_SECRET=...`
 - `CORS_ORIGIN=https://inventory.barreldrop.co.zw`
 - `COOKIE_SECURE=true`
-- `AWS_REGION=af-south-1`
-- `S3_BUCKET=...`
 - `VITE_API_URL=https://api.barreldrop.co.zw`
+
+For local invoice uploads on EBS, do not set `AWS_REGION` or `S3_BUCKET`.
 
 ## 3) Apply Terraform (two-step because ACM needs DNS validation)
 

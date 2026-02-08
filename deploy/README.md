@@ -1,6 +1,6 @@
 # EC2 Deployment (Amazon Linux 2023)
 
-This guide deploys the frontend, API, and MongoDB using Docker Compose on one EC2 instance, with EBS-backed MongoDB data, Nginx, and Let's Encrypt SSL.
+This guide deploys the frontend, API, and MongoDB using Docker Compose on one EC2 instance, with EBS-backed MongoDB and invoice uploads, Nginx, and Let's Encrypt SSL.
 
 ## 1) EC2 + EBS Setup
 
@@ -16,8 +16,8 @@ sudo lsblk
 sudo mkfs.xfs /dev/nvme1n1
 sudo mkdir -p /data
 sudo mount /dev/nvme1n1 /data
-sudo mkdir -p /data/mongo
-sudo chown -R ec2-user:ec2-user /data/mongo
+sudo mkdir -p /data/mongo /data/uploads
+sudo chown -R ec2-user:ec2-user /data/mongo /data/uploads
 echo "/dev/nvme1n1 /data xfs defaults,nofail 0 2" | sudo tee -a /etc/fstab
 ```
 
@@ -47,9 +47,9 @@ Create parameters in AWS SSM Parameter Store (Path: `/barreldrop/prod`):
 - `JWT_SECRET=...`
 - `CORS_ORIGIN=https://inventory.barreldrop.co.zw`
 - `COOKIE_SECURE=true`
-- `AWS_REGION=...`
-- `S3_BUCKET=...`
 - `VITE_API_URL=https://api.barreldrop.co.zw`
+
+For local invoice uploads on EBS, do not set `AWS_REGION` or `S3_BUCKET`.
 
 Then run:
 

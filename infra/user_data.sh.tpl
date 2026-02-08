@@ -36,8 +36,8 @@ if [ -n "$${DATA_DEV}" ]; then
   if ! mountpoint -q /data; then
     mount "$${DATA_DEV}" /data || true
   fi
-  mkdir -p /data/mongo
-  chmod 755 /data/mongo
+  mkdir -p /data/mongo /data/uploads
+  chmod 755 /data/mongo /data/uploads
   grep -q "$${DATA_DEV} /data" /etc/fstab || echo "$${DATA_DEV} /data xfs defaults,nofail 0 2" >> /etc/fstab
 fi
 

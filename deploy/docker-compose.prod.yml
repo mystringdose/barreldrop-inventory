@@ -16,6 +16,8 @@ services:
     restart: unless-stopped
     env_file:
       - /etc/barreldrop/api.env
+    volumes:
+      - /data/uploads:/app/uploads
     ports:
       - "127.0.0.1:4000:4000"
     depends_on:
