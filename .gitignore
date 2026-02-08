@@ -11,6 +11,7 @@ api/uploads
 !**/.env.example
 *.tfvars
 infra/terraform.tfvars
+infra/.terraform
 *.auto.tfvars
 *.tfstate
 *.tfstate.backup
