@@ -129,7 +129,10 @@ resource "aws_iam_policy" "ssm_params" {
           "ssm:GetParameter",
           "ssm:GetParameters"
         ]
-        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_path}/*"
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_path}",
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_path}/*"
+        ]
       },
       {
         Effect = "Allow"
@@ -153,14 +156,10 @@ resource "aws_iam_instance_profile" "ec2" {
 }
 
 locals {
-  compose_yaml = templatefile("${path.module}/docker-compose.yml.tpl", {
-    api_image      = var.dockerhub_api_image
-    frontend_image = var.dockerhub_frontend_image
-  })
-
   user_data = templatefile("${path.module}/user_data.sh.tpl", {
-    compose_yaml = local.compose_yaml
-    ssm_path     = var.ssm_path
+    ssm_path        = var.ssm_path
+    github_repo_url = var.github_repo_url
+    github_branch   = var.github_branch
   })
 }
 
@@ -289,13 +288,13 @@ resource "aws_cloudfront_distribution" "api" {
   }
 
   default_cache_behavior {
-    target_origin_id       = "barreldrop-api-origin"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
-    cached_methods         = ["GET", "HEAD", "OPTIONS"]
-    cache_policy_id        = data.aws_cloudfront_cache_policy.disabled.id
+    target_origin_id         = "barreldrop-api-origin"
+    viewer_protocol_policy   = "redirect-to-https"
+    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods           = ["GET", "HEAD", "OPTIONS"]
+    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
-    compress               = true
+    compress                 = true
   }
 
   restrictions {

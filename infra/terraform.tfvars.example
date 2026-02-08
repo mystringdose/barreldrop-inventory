@@ -1,0 +1,12 @@
+aws_region       = "af-south-1"
+instance_type    = "t3a.small"
+mongo_volume_gb  = 20
+inventory_domain = "app.frontend.com"
+api_domain       = "api.frontend.com"
+origin_domain    = "origin.cdn.com"
+
+# Public repo example
+github_repo_url = "https://github.com/<org>/<repo>.git"
+github_branch   = "main"
+
+ssm_path = "/app/prod"

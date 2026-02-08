@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   mongo:
     image: mongo:7
@@ -9,7 +7,8 @@ services:
       - /data/mongo:/data/db
 
   api:
-    image: ${api_image}
+    build:
+      context: ./api
     container_name: barreldrop-api
     restart: unless-stopped
     env_file:
@@ -20,11 +19,12 @@ services:
       - mongo
 
   frontend:
-    image: ${frontend_image}
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL}
     container_name: barreldrop-frontend
     restart: unless-stopped
-    env_file:
-      - /etc/barreldrop/frontend.env
     ports:
       - "80:80"
     depends_on:

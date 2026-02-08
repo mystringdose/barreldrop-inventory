@@ -6,7 +6,7 @@ COPY package.json package-lock.json* ./
 RUN npm install --production
 
 COPY src ./src
-COPY uploads ./uploads
+RUN mkdir -p ./uploads
 
 ENV NODE_ENV=production
 

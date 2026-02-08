@@ -34,16 +34,15 @@ variable "origin_domain" {
   default     = "origin.barreldrop.co.zw"
 }
 
-variable "dockerhub_api_image" {
+variable "github_repo_url" {
   type        = string
-  description = "Docker Hub image for API."
-  default     = "yourdockerhub/barreldrop-api:latest"
+  description = "GitHub repository URL used by EC2 bootstrap to deploy the app."
 }
 
-variable "dockerhub_frontend_image" {
+variable "github_branch" {
   type        = string
-  description = "Docker Hub image for frontend."
-  default     = "yourdockerhub/barreldrop-frontend:latest"
+  description = "Git branch to deploy from GitHub."
+  default     = "main"
 }
 
 variable "ssm_path" {

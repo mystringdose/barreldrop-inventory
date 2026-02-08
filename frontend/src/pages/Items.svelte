@@ -68,7 +68,6 @@
       // Invoice file required
       if (!stockInvoiceFile) throw new Error("Invoice file is required");
 
-      let invoiceKey = null;
       try {
         const presign = await api.request("/stock-receipts/presign", {
           method: "POST",
@@ -76,7 +75,7 @@
         });
 
         const uploadUrl = presign.upload.url;
-        invoiceKey = presign.upload.key;
+        const invoiceKey = presign.upload.key;
 
         const uploadRes = await fetch(uploadUrl, {
           method: "PUT",
@@ -85,7 +84,7 @@
         });
 
         if (!uploadRes.ok) {
-          throw new Error("S3 upload failed");
+          throw new Error("S3 upload failed. Check S3 bucket CORS and permissions.");
         }
 
         await api.request("/stock-receipts", {
@@ -98,13 +97,18 @@
             invoiceKey,
           },
         });
-      } catch (presignErr) {
+      } catch (s3Err) {
+        // Fallback to local upload only when S3 is not configured.
+        if (!String(s3Err?.message || "").includes("S3 is not configured")) {
+          throw s3Err;
+        }
+
         const form = new FormData();
         form.append("itemId", stockItemId);
         form.append("quantity", stockQuantity);
         form.append("unitCost", stockUnitCost);
         if (stockSupplier) form.append("supplier", stockSupplier);
-        if (stockInvoiceFile) form.append("invoice", stockInvoiceFile);
+        form.append("invoice", stockInvoiceFile);
 
         const res = await fetch(`${apiUrl("")}/stock-receipts`, {
           method: "POST",
@@ -231,7 +235,7 @@
       const form = new FormData();
       form.append("file", bulkFile);
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:4000"}/items/bulk`, {
+      const res = await fetch(`${apiUrl("")}/items/bulk`, {
         method: "POST",
         credentials: "include",
         body: form,

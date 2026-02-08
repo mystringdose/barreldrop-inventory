@@ -1,0 +1,9 @@
+aws ssm put-parameter --name /barreldrop/prod/PORT --type String --value "4000" --overwrite
+aws ssm put-parameter --name /barreldrop/prod/MONGO_URI --type String --value "mongodb://mongo:27017/barreldrop" --overwrite
+aws ssm put-parameter --name /barreldrop/prod/JWT_SECRET --type SecureString --value "HFHH489H494H3G4HGF49GH4FHF94FF9F" --overwrite
+aws ssm put-parameter --name /barreldrop/prod/CORS_ORIGIN --type String --value "https://inventory.barreldrop.co.zw" --overwrite
+aws ssm put-parameter --name /barreldrop/prod/COOKIE_SECURE --type String --value "true" --overwrite
+aws ssm put-parameter --name /barreldrop/prod/AWS_REGION --type String --value "af-south-1" --overwrite
+aws ssm put-parameter --name /barreldrop/prod/S3_BUCKET --type String --value "barreldrop-inventory" --overwrite
+aws ssm put-parameter --name /barreldrop/prod/VITE_API_URL --type String --value "https://api.barreldrop.co.zw" --overwrite
+aws ssm put-parameter --name /barreldrop/prod/FRONTEND_URL --type String --value "https://inventory.barreldrop.co.zw" --overwrite
