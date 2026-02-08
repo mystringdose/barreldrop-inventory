@@ -1,0 +1,78 @@
+name: Build and Push Images to ECR
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "api/**"
+      - "frontend/**"
+      - "mongo/**"
+      - ".github/workflows/build-and-push-ecr.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_FRONTEND_REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY }}
+  ECR_API_REPOSITORY: ${{ vars.ECR_API_REPOSITORY }}
+  ECR_MONGO_REPOSITORY: ${{ vars.ECR_MONGO_REPOSITORY }}
+
+jobs:
+  build-and-push:
+    name: Build and push ${{ matrix.service.name }} image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+          - name: api
+            context: ./api
+            dockerfile: ./api/Dockerfile
+          - name: mongo
+            context: ./mongo
+            dockerfile: ./mongo/Dockerfile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve ECR repository
+        id: repo
+        run: |
+          case "${{ matrix.service.name }}" in
+            frontend) echo "repository=${ECR_FRONTEND_REPOSITORY}" >> "$GITHUB_OUTPUT" ;;
+            api) echo "repository=${ECR_API_REPOSITORY}" >> "$GITHUB_OUTPUT" ;;
+            mongo) echo "repository=${ECR_MONGO_REPOSITORY}" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Unsupported service: ${{ matrix.service.name }}" ; exit 1 ;;
+          esac
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          push: true
+          provenance: false
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.repo.outputs.repository }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.repo.outputs.repository }}:latest
