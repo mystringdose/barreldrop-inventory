@@ -71,6 +71,8 @@ jobs:
           echo "command_id=${command_id}" >> "$GITHUB_OUTPUT"
 
       - name: Wait for deploy completion
+        id: wait
+        continue-on-error: true
         run: |
           set -euo pipefail
           aws ssm wait command-executed \
@@ -78,10 +80,26 @@ jobs:
             --instance-id "${{ steps.meta.outputs.instance_id }}"
 
       - name: Print deploy output
+        if: always()
+        id: invocation
         run: |
           set -euo pipefail
           aws ssm get-command-invocation \
             --command-id "${{ steps.ssm.outputs.command_id }}" \
             --instance-id "${{ steps.meta.outputs.instance_id }}" \
             --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
-            --output json
+            --output json | tee /tmp/ssm-invocation.json
+
+      - name: Fail workflow when deploy command failed
+        if: always()
+        run: |
+          set -euo pipefail
+          status="$(aws ssm get-command-invocation \
+            --command-id "${{ steps.ssm.outputs.command_id }}" \
+            --instance-id "${{ steps.meta.outputs.instance_id }}" \
+            --query 'Status' \
+            --output text)"
+          if [ "$status" != "Success" ]; then
+            echo "SSM deploy command failed with status: $status" >&2
+            exit 1
+          fi
