@@ -20,6 +20,9 @@ export ECR_FRONTEND_REPOSITORY
 export ECR_API_REPOSITORY
 export ECR_MONGO_REPOSITORY
 
+# Clean up legacy containers that may have been created by a different compose project.
+docker rm -f barreldrop-frontend barreldrop-api barreldrop-mongo >/dev/null 2>&1 || true
+
 if docker compose version >/dev/null 2>&1; then
   docker compose -f infra/docker-compose.ecr.yml pull
   docker compose -f infra/docker-compose.ecr.yml up -d --remove-orphans
