@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const ItemSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
-    sku: { type: String, required: true, unique: true },
+    sku: { type: String, required: true, unique: true, trim: true, uppercase: true },
     category: { type: String, enum: ["whiskey", "wine", "rum", "beer", "vodka", "gin", "other"] },
     size: { type: String },
     abv: { type: Number },

@@ -1,8 +1,7 @@
 <script>
-  import { onMount } from "svelte";
-  import { api, apiUrl } from "../lib/api.js";
-  import { authStore } from "../lib/stores.js";
-  import BarcodeScanner from "../components/BarcodeScanner.svelte";
+import { onMount } from "svelte";
+import { api, apiUrl } from "../lib/api.js";
+import { authStore } from "../lib/stores.js";
 
   let items = [];
   let loading = true;
@@ -280,9 +279,6 @@
     <input class="border rounded px-3 py-2" placeholder="Buying price" type="number" min="0" step="0.01" bind:value={buyingPrice} />
     <input class="border rounded px-3 py-2" placeholder="Selling price" type="number" min="0" step="0.01" bind:value={sellingPrice} />
     <input class="border rounded px-3 py-2" placeholder="Reorder level" type="number" min="0" bind:value={reorderLevel} />
-  </div>
-  <div class="mt-3">
-    <BarcodeScanner onDetect={(code) => (sku = code)} />
   </div>
   <button class="mt-3 bg-slate-900 text-white px-4 py-2 rounded" on:click={createItem}>
     Save Item

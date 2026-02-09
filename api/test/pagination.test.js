@@ -80,6 +80,13 @@ test("non-admin user can create an item", async () => {
   expect(res.body.item.createdBy.toString()).toBe(normalUser._id.toString());
 });
 
+test("duplicate sku is rejected", async () => {
+  await agent.post("/items").send({ name: "First Item", sku: "dup-1", category: "wine" }).expect(200);
+
+  const res = await agent.post("/items").send({ name: "Second Item", sku: "DUP-1", category: "beer" }).expect(409);
+  expect(res.body.error).toBe("SKU already exists");
+});
+
 test("non-admin user can edit an item", async () => {
   const passwordHash = await User.hashPassword("secret123");
   const normalUser = await User.create({

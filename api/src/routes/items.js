@@ -30,6 +30,14 @@ const statusSchema = z.object({
 
 itemRouter.use(requireAuth);
 
+function normalizeSku(sku) {
+  return String(sku || "").trim().toUpperCase();
+}
+
+function isDuplicateSkuError(err) {
+  return err?.code === 11000 && err?.keyPattern?.sku;
+}
+
 function encodeCursor(doc) {
   if (!doc) return null;
   return Buffer.from(JSON.stringify({ name: doc.name, _id: doc._id.toString() })).toString("base64");
@@ -109,9 +117,19 @@ itemRouter.get("/", async (req, res, next) => {
 itemRouter.post("/", async (req, res, next) => {
   try {
     const data = validate(itemSchema, req.body);
+    data.sku = normalizeSku(data.sku);
+
+    const existing = await Item.findOne({ sku: data.sku }).lean();
+    if (existing) {
+      return res.status(409).json({ error: "SKU already exists" });
+    }
+
     const item = await Item.create({ ...data, createdBy: req.user._id });
     res.json({ item });
   } catch (err) {
+    if (isDuplicateSkuError(err)) {
+      return res.status(409).json({ error: "SKU already exists" });
+    }
     next(err);
   }
 });
@@ -146,6 +164,7 @@ itemRouter.post("/bulk", requireRole("admin"), upload.single("file"), async (req
         sellingPrice: row.sellingPrice ? Number(row.sellingPrice) : undefined,
         reorderLevel: row.reorderLevel ? Number(row.reorderLevel) : undefined,
       });
+      data.sku = normalizeSku(data.sku);
 
       const existing = await Item.findOne({ sku: data.sku });
       if (existing) {
@@ -166,10 +185,21 @@ itemRouter.post("/bulk", requireRole("admin"), upload.single("file"), async (req
 itemRouter.patch("/:id", async (req, res, next) => {
   try {
     const data = validate(itemSchema.partial(), req.body);
-    const item = await Item.findByIdAndUpdate(req.params.id, data, { new: true });
+    if (data.sku !== undefined) {
+      data.sku = normalizeSku(data.sku);
+      const existing = await Item.findOne({ sku: data.sku, _id: { $ne: req.params.id } }).lean();
+      if (existing) {
+        return res.status(409).json({ error: "SKU already exists" });
+      }
+    }
+
+    const item = await Item.findByIdAndUpdate(req.params.id, data, { new: true, runValidators: true });
     if (!item) return res.status(404).json({ error: "Item not found" });
     res.json({ item });
   } catch (err) {
+    if (isDuplicateSkuError(err)) {
+      return res.status(409).json({ error: "SKU already exists" });
+    }
     next(err);
   }
 });
