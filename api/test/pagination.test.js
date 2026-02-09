@@ -59,6 +59,82 @@ test("items cursor pagination works", async () => {
   expect(res2.body.items[0].name).toBe("Charlie");
 });
 
+test("non-admin user can create an item", async () => {
+  const passwordHash = await User.hashPassword("secret123");
+  const normalUser = await User.create({
+    name: "Normal User",
+    email: "user@example.com",
+    passwordHash,
+    role: "user",
+  });
+
+  const userAgent = request.agent(app);
+  await userAgent.post("/auth/login").send({ email: "user@example.com", password: "secret123" }).expect(200);
+
+  const res = await userAgent
+    .post("/items")
+    .send({ name: "User Item", sku: "USR-1", category: "wine", sellingPrice: 12.5 })
+    .expect(200);
+
+  expect(res.body.item.name).toBe("User Item");
+  expect(res.body.item.createdBy.toString()).toBe(normalUser._id.toString());
+});
+
+test("non-admin user can edit an item", async () => {
+  const passwordHash = await User.hashPassword("secret123");
+  const normalUser = await User.create({
+    name: "Editor User",
+    email: "editor@example.com",
+    passwordHash,
+    role: "user",
+  });
+
+  const item = await Item.create({
+    name: "Editable",
+    sku: "EDT-1",
+    category: "wine",
+    createdBy: normalUser._id,
+  });
+
+  const userAgent = request.agent(app);
+  await userAgent.post("/auth/login").send({ email: "editor@example.com", password: "secret123" }).expect(200);
+
+  const res = await userAgent
+    .patch(`/items/${item._id}`)
+    .send({ name: "Edited Name", sellingPrice: 25.0 })
+    .expect(200);
+
+  expect(res.body.item.name).toBe("Edited Name");
+  expect(res.body.item.sellingPrice).toBe(25);
+});
+
+test("sale uses item selling price and ignores client-provided unit price", async () => {
+  const item = await Item.create({
+    name: "Priced Item",
+    sku: "PRICE-1",
+    category: "wine",
+    sellingPrice: 15,
+    createdBy: adminUser._id,
+  });
+  await StockReceipt.create({
+    item: item._id,
+    quantity: 5,
+    remainingQuantity: 5,
+    unitCost: 8,
+    createdBy: adminUser._id,
+  });
+
+  const res = await agent
+    .post("/sales")
+    .send({
+      items: [{ itemId: item._id.toString(), quantity: 2, unitPrice: 999 }],
+    })
+    .expect(200);
+
+  expect(res.body.sale.items[0].unitPrice).toBe(15);
+  expect(res.body.sale.totalRevenue).toBe(30);
+});
+
 test("sales date filter and cursor works", async () => {
   // Create two sales: one today and one yesterday
   const item = await Item.create({ name: "X", sku: "X1", createdBy: adminUser._id });

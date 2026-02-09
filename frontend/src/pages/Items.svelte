@@ -264,61 +264,61 @@
 
 <h2 class="text-lg font-semibold text-slate-900 mb-4">Stock Items</h2>
 
-{#if $authStore.user?.role === "admin"}
+<div class="bg-white rounded shadow-sm p-4 mb-6">
+  <h3 class="font-semibold text-slate-900 mb-2">Add Item</h3>
+  <div class="grid md:grid-cols-3 gap-3 text-sm">
+    <input class="border rounded px-3 py-2" placeholder="Name" bind:value={name} />
+    <input class="border rounded px-3 py-2" placeholder="SKU" bind:value={sku} />
+    <select class="border rounded px-3 py-2" bind:value={category}>
+      <option value="">Category</option>
+      {#each categories as c}
+        <option value={c}>{c}</option>
+      {/each}
+    </select>
+    <input class="border rounded px-3 py-2" placeholder="Size" bind:value={size} />
+    <input class="border rounded px-3 py-2" placeholder="ABV" type="number" min="0" max="100" bind:value={abv} />
+    <input class="border rounded px-3 py-2" placeholder="Buying price" type="number" min="0" step="0.01" bind:value={buyingPrice} />
+    <input class="border rounded px-3 py-2" placeholder="Selling price" type="number" min="0" step="0.01" bind:value={sellingPrice} />
+    <input class="border rounded px-3 py-2" placeholder="Reorder level" type="number" min="0" bind:value={reorderLevel} />
+  </div>
+  <div class="mt-3">
+    <BarcodeScanner onDetect={(code) => (sku = code)} />
+  </div>
+  <button class="mt-3 bg-slate-900 text-white px-4 py-2 rounded" on:click={createItem}>
+    Save Item
+  </button>
+</div>
+
+{#if editingId}
   <div class="bg-white rounded shadow-sm p-4 mb-6">
-    <h3 class="font-semibold text-slate-900 mb-2">Add Item</h3>
+    <h3 class="font-semibold text-slate-900 mb-2">Edit Item</h3>
     <div class="grid md:grid-cols-3 gap-3 text-sm">
-      <input class="border rounded px-3 py-2" placeholder="Name" bind:value={name} />
-      <input class="border rounded px-3 py-2" placeholder="SKU" bind:value={sku} />
-      <select class="border rounded px-3 py-2" bind:value={category}>
+      <input class="border rounded px-3 py-2" placeholder="Name" bind:value={editForm.name} />
+      <input class="border rounded px-3 py-2" placeholder="SKU" bind:value={editForm.sku} />
+      <select class="border rounded px-3 py-2" bind:value={editForm.category}>
         <option value="">Category</option>
         {#each categories as c}
           <option value={c}>{c}</option>
         {/each}
       </select>
-      <input class="border rounded px-3 py-2" placeholder="Size" bind:value={size} />
-      <input class="border rounded px-3 py-2" placeholder="ABV" type="number" min="0" max="100" bind:value={abv} />
-      <input class="border rounded px-3 py-2" placeholder="Buying price" type="number" min="0" step="0.01" bind:value={buyingPrice} />
-      <input class="border rounded px-3 py-2" placeholder="Selling price" type="number" min="0" step="0.01" bind:value={sellingPrice} />
-      <input class="border rounded px-3 py-2" placeholder="Reorder level" type="number" min="0" bind:value={reorderLevel} />
+      <input class="border rounded px-3 py-2" placeholder="Size" bind:value={editForm.size} />
+      <input class="border rounded px-3 py-2" placeholder="ABV" type="number" min="0" max="100" bind:value={editForm.abv} />
+      <input class="border rounded px-3 py-2" placeholder="Buying price" type="number" min="0" step="0.01" bind:value={editForm.buyingPrice} />
+      <input class="border rounded px-3 py-2" placeholder="Selling price" type="number" min="0" step="0.01" bind:value={editForm.sellingPrice} />
+      <input class="border rounded px-3 py-2" placeholder="Reorder level" type="number" min="0" bind:value={editForm.reorderLevel} />
     </div>
     <div class="mt-3">
-      <BarcodeScanner onDetect={(code) => (sku = code)} />
+      <button class="bg-slate-900 text-white px-4 py-2 rounded mr-2" on:click={saveEdit}>
+        Save Changes
+      </button>
+      <button class="border px-4 py-2 rounded" on:click={() => (editingId = null)}>
+        Cancel
+      </button>
     </div>
-    <button class="mt-3 bg-slate-900 text-white px-4 py-2 rounded" on:click={createItem}>
-      Save Item
-    </button>
   </div>
+{/if}
 
-  {#if editingId}
-    <div class="bg-white rounded shadow-sm p-4 mb-6">
-      <h3 class="font-semibold text-slate-900 mb-2">Edit Item</h3>
-      <div class="grid md:grid-cols-3 gap-3 text-sm">
-        <input class="border rounded px-3 py-2" placeholder="Name" bind:value={editForm.name} />
-        <input class="border rounded px-3 py-2" placeholder="SKU" bind:value={editForm.sku} />
-        <select class="border rounded px-3 py-2" bind:value={editForm.category}>
-          <option value="">Category</option>
-          {#each categories as c}
-            <option value={c}>{c}</option>
-          {/each}
-        </select>
-        <input class="border rounded px-3 py-2" placeholder="Size" bind:value={editForm.size} />
-        <input class="border rounded px-3 py-2" placeholder="ABV" type="number" min="0" max="100" bind:value={editForm.abv} />
-        <input class="border rounded px-3 py-2" placeholder="Buying price" type="number" min="0" step="0.01" bind:value={editForm.buyingPrice} />
-        <input class="border rounded px-3 py-2" placeholder="Selling price" type="number" min="0" step="0.01" bind:value={editForm.sellingPrice} />
-        <input class="border rounded px-3 py-2" placeholder="Reorder level" type="number" min="0" bind:value={editForm.reorderLevel} />
-      </div>
-      <div class="mt-3">
-        <button class="bg-slate-900 text-white px-4 py-2 rounded mr-2" on:click={saveEdit}>
-          Save Changes
-        </button>
-        <button class="border px-4 py-2 rounded" on:click={() => (editingId = null)}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  {/if}
-
+{#if $authStore.user?.role === "admin"}
   <div class="bg-white rounded shadow-sm p-4 mb-6">
     <h3 class="font-semibold text-slate-900 mb-2">Bulk Import (CSV)</h3>
     <p class="text-xs text-slate-500 mb-2">Columns: name, sku, category, size, abv, reorderLevel, buyingPrice, sellingPrice</p>
@@ -403,6 +403,9 @@
                   {item.status === "active" ? "Freeze" : "Unfreeze"}
                 </button>
               {:else}
+                <button class="text-xs border rounded px-2 py-1 mr-2" on:click={() => startEdit(item)}>
+                  Edit
+                </button>
                 <button class="text-xs border rounded px-2 py-1" on:click={() => toggleStatus(item)}>
                   {item.status === "active" ? "Freeze" : "Unfreeze"}
                 </button>

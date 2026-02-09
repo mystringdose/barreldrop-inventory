@@ -30,8 +30,9 @@
 
   let lineItemId = "";
   let lineQty = "";
-  let linePrice = "";
   let saleLines = [];
+  $: selectedItem = items.find((i) => i._id === lineItemId);
+  $: selectedSellingPrice = Number(selectedItem?.sellingPrice ?? 0);
 
   async function load({ cursorParam = null, direction = undefined, resetStack = false } = {}) {
     loading = true;
@@ -59,20 +60,20 @@
   }
 
   function addLine() {
-    if (!lineItemId || !lineQty || !linePrice) return;
+    if (!lineItemId || !lineQty) return;
     const item = items.find((i) => i._id === lineItemId);
+    if (!item) return;
     saleLines = [
       ...saleLines,
       {
         itemId: lineItemId,
         name: item?.name,
         quantity: Number(lineQty),
-        unitPrice: Number(linePrice),
+        unitPrice: Number(item.sellingPrice ?? 0),
       },
     ];
     lineItemId = "";
     lineQty = "";
-    linePrice = "";
   }
 
   async function submitSale() {
@@ -82,7 +83,6 @@
         items: saleLines.map((line) => ({
           itemId: line.itemId,
           quantity: line.quantity,
-          unitPrice: line.unitPrice,
         })),
       });
       saleLines = [];
@@ -104,12 +104,12 @@
       <option value="">Select Item</option>
       {#each items as item}
         <option value={item._id} disabled={item.status === "frozen"}>
-          {item.name} ({item.availableQuantity} available)
+          {item.name} (${Number(item.sellingPrice ?? 0).toFixed(2)} • {item.availableQuantity} available)
         </option>
       {/each}
     </select>
     <input class="border rounded px-3 py-2" placeholder="Qty" type="number" min="1" bind:value={lineQty} />
-    <input class="border rounded px-3 py-2" placeholder="Unit price" type="number" min="0" bind:value={linePrice} />
+    <input class="border rounded px-3 py-2 bg-slate-50 text-slate-700" value={`$${selectedSellingPrice.toFixed(2)}`} readonly />
     <button class="bg-slate-900 text-white rounded px-3 py-2" on:click={addLine}>Add</button>
   </div>
 

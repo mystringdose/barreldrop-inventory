@@ -11,7 +11,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 export const itemRouter = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-const categoryEnum = z.enum(["whiskey", "wine", "rum", "beer", "vodka", "gin", "other"]);
+const categoryEnum = z.enum(["whiskey", "wine", "rum", "beer", "vodka", "cognac","gin", "other"]);
 
 const itemSchema = z.object({
   name: z.string().min(2),
@@ -106,7 +106,7 @@ itemRouter.get("/", async (req, res, next) => {
   }
 });
 
-itemRouter.post("/", requireRole("admin"), async (req, res, next) => {
+itemRouter.post("/", async (req, res, next) => {
   try {
     const data = validate(itemSchema, req.body);
     const item = await Item.create({ ...data, createdBy: req.user._id });
@@ -163,7 +163,7 @@ itemRouter.post("/bulk", requireRole("admin"), upload.single("file"), async (req
   }
 });
 
-itemRouter.patch("/:id", requireRole("admin"), async (req, res, next) => {
+itemRouter.patch("/:id", async (req, res, next) => {
   try {
     const data = validate(itemSchema.partial(), req.body);
     const item = await Item.findByIdAndUpdate(req.params.id, data, { new: true });

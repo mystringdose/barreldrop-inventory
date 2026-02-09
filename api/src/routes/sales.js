@@ -17,7 +17,6 @@ const saleSchema = z.object({
       z.object({
         itemId: z.string().min(1),
         quantity: z.number().min(1),
-        unitPrice: z.number().min(0),
       })
     )
     .min(1),
@@ -107,7 +106,6 @@ salesRouter.post("/", async (req, res, next) => {
       items: req.body.items?.map((item) => ({
         ...item,
         quantity: Number(item.quantity),
-        unitPrice: Number(item.unitPrice),
       })),
     });
 
@@ -151,14 +149,15 @@ salesRouter.post("/", async (req, res, next) => {
         throw err;
       }
 
-      const lineTotal = line.quantity * line.unitPrice;
+      const unitPrice = Number(item.sellingPrice ?? 0);
+      const lineTotal = line.quantity * unitPrice;
       totalRevenue += lineTotal;
       totalCost += lineCost;
 
       saleItems.push({
         item: item._id,
         quantity: line.quantity,
-        unitPrice: line.unitPrice,
+        unitPrice,
         unitCost: lineCost / line.quantity,
         lineTotal,
         lineCost,
