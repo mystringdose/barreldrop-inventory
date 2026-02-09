@@ -64,7 +64,7 @@ jobs:
             --instance-ids "${{ steps.meta.outputs.instance_id }}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy ${IMAGE_TAG} to BarrelDrop" \
-            --parameters "commands=[\"set -euo pipefail\",\"export HOME=/root\",\"git config --system --add safe.directory /opt/barreldrop/repo\",\"cd /opt/barreldrop/repo\",\"git fetch origin '${DEPLOY_BRANCH}'\",\"git checkout -B '${DEPLOY_BRANCH}' 'origin/${DEPLOY_BRANCH}'\",\"AWS_REGION='${AWS_REGION}' ECR_REGISTRY='${{ steps.meta.outputs.registry }}' ECR_FRONTEND_REPOSITORY='${ECR_FRONTEND_REPOSITORY}' ECR_API_REPOSITORY='${ECR_API_REPOSITORY}' ECR_MONGO_REPOSITORY='${ECR_MONGO_REPOSITORY}' ./deploy/deploy_from_ecr.sh '${IMAGE_TAG}'\"]" \
+            --parameters "commands=[\"set -euo pipefail\",\"export HOME=/root\",\"git config --system --add safe.directory /opt/barreldrop/repo\",\"cd /opt/barreldrop/repo\",\"git fetch origin '${DEPLOY_BRANCH}'\",\"git reset --hard\",\"git clean -fd\",\"git checkout -f -B '${DEPLOY_BRANCH}' 'origin/${DEPLOY_BRANCH}'\",\"AWS_REGION='${AWS_REGION}' ECR_REGISTRY='${{ steps.meta.outputs.registry }}' ECR_FRONTEND_REPOSITORY='${ECR_FRONTEND_REPOSITORY}' ECR_API_REPOSITORY='${ECR_API_REPOSITORY}' ECR_MONGO_REPOSITORY='${ECR_MONGO_REPOSITORY}' ./deploy/deploy_from_ecr.sh '${IMAGE_TAG}'\"]" \
             --query 'Command.CommandId' \
             --output text)"
 
