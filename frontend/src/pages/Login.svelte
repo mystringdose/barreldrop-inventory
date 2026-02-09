@@ -50,6 +50,9 @@
 
 <div class="min-h-screen flex items-center justify-center px-4">
   <div class="bg-white shadow-lg rounded-lg p-6 w-full max-w-md">
+    <div class="mb-4 flex justify-center">
+      <img src="/barreldrop-logo.svg" alt="BarrelDrop" class="h-16 w-auto" />
+    </div>
     <h2 class="text-lg font-semibold text-slate-900">Sign in</h2>
     <p class="text-sm text-slate-500 mb-4">Use your Barrel Drop account.</p>
 
