@@ -1,4 +1,19 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+function resolveDefaultApiUrl() {
+  if (typeof window === "undefined") return "http://localhost:4000";
+
+  const { protocol, hostname } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return "http://localhost:4000";
+  }
+
+  if (hostname.startsWith("inventory.")) {
+    return `${protocol}//api.${hostname.slice("inventory.".length)}`;
+  }
+
+  return `${protocol}//${hostname}`;
+}
+
+const API_URL = import.meta.env.VITE_API_URL || resolveDefaultApiUrl();
 
 async function request(path, { method = "GET", body, headers } = {}) {
   const res = await fetch(`${API_URL}${path}`, {
