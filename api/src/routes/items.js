@@ -4,6 +4,7 @@ import multer from "multer";
 import { parse } from "csv-parse/sync";
 
 import { Item } from "../models/Item.js";
+import { ITEM_CATEGORIES } from "../constants/item.js";
 import { StockReceipt } from "../models/StockReceipt.js";
 import { validate } from "../lib/validate.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -11,7 +12,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 export const itemRouter = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-const categoryEnum = z.enum(["whiskey", "wine", "rum", "beer", "vodka", "cognac","gin", "other"]);
+const categoryEnum = z.enum(ITEM_CATEGORIES);
 
 const itemSchema = z.object({
   name: z.string().min(2),

@@ -7,7 +7,7 @@ import { authStore } from "../lib/stores.js";
   let loading = true;
   let error = "";
 
-  const categories = ["whiskey", "wine", "rum", "beer", "vodka", "gin", "other"];
+  const categories = ["whiskey", "wine", "rum", "beer", "vodka", "cognac", "gin", "other"];
 
   let name = "";
   let sku = "";

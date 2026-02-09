@@ -112,6 +112,8 @@ salesRouter.post("/", async (req, res, next) => {
     const saleItems = [];
     let totalRevenue = 0;
     let totalCost = 0;
+    const stagedReceiptRemaining = new Map();
+    const touchedReceipts = new Map();
 
     for (const line of payload.items) {
       const item = await Item.findById(line.itemId);
@@ -136,11 +138,17 @@ salesRouter.post("/", async (req, res, next) => {
 
       for (const receipt of receipts) {
         if (remaining <= 0) break;
-        const useQty = Math.min(receipt.remainingQuantity, remaining);
-        receipt.remainingQuantity -= useQty;
+        const receiptId = receipt._id.toString();
+        const available = stagedReceiptRemaining.has(receiptId)
+          ? stagedReceiptRemaining.get(receiptId)
+          : receipt.remainingQuantity;
+        if (available <= 0) continue;
+
+        const useQty = Math.min(available, remaining);
+        stagedReceiptRemaining.set(receiptId, available - useQty);
+        touchedReceipts.set(receiptId, receipt);
         remaining -= useQty;
         lineCost += useQty * receipt.unitCost;
-        await receipt.save();
       }
 
       if (remaining > 0) {
@@ -162,6 +170,19 @@ salesRouter.post("/", async (req, res, next) => {
         lineTotal,
         lineCost,
       });
+    }
+
+    if (touchedReceipts.size > 0) {
+      const ops = [];
+      for (const [receiptId, receipt] of touchedReceipts.entries()) {
+        ops.push({
+          updateOne: {
+            filter: { _id: receipt._id },
+            update: { $set: { remainingQuantity: stagedReceiptRemaining.get(receiptId) } },
+          },
+        });
+      }
+      await StockReceipt.bulkWrite(ops);
     }
 
     const sale = await Sale.create([

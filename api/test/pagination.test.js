@@ -87,6 +87,26 @@ test("duplicate sku is rejected", async () => {
   expect(res.body.error).toBe("SKU already exists");
 });
 
+test("duplicate sku on update is rejected", async () => {
+  const one = await Item.create({ name: "One", sku: "ONE-1", createdBy: adminUser._id });
+  const two = await Item.create({ name: "Two", sku: "TWO-1", createdBy: adminUser._id });
+
+  const res = await agent.patch(`/items/${two._id}`).send({ sku: "one-1" }).expect(409);
+  expect(res.body.error).toBe("SKU already exists");
+  const reloaded = await Item.findById(two._id).lean();
+  expect(reloaded.sku).toBe("TWO-1");
+  expect(one._id.toString()).not.toBe(two._id.toString());
+});
+
+test("cognac category is accepted", async () => {
+  const res = await agent
+    .post("/items")
+    .send({ name: "Cognac Item", sku: "CAT-1", category: "cognac" })
+    .expect(200);
+
+  expect(res.body.item.category).toBe("cognac");
+});
+
 test("non-admin user can edit an item", async () => {
   const passwordHash = await User.hashPassword("secret123");
   const normalUser = await User.create({
@@ -140,6 +160,51 @@ test("sale uses item selling price and ignores client-provided unit price", asyn
 
   expect(res.body.sale.items[0].unitPrice).toBe(15);
   expect(res.body.sale.totalRevenue).toBe(30);
+});
+
+test("failed multi-line sale does not persist staged stock deductions", async () => {
+  const itemA = await Item.create({
+    name: "Item A",
+    sku: "ITEM-A",
+    sellingPrice: 10,
+    createdBy: adminUser._id,
+  });
+  const itemB = await Item.create({
+    name: "Item B",
+    sku: "ITEM-B",
+    sellingPrice: 8,
+    createdBy: adminUser._id,
+  });
+
+  const receiptA = await StockReceipt.create({
+    item: itemA._id,
+    quantity: 5,
+    remainingQuantity: 5,
+    unitCost: 3,
+    createdBy: adminUser._id,
+  });
+  const receiptB = await StockReceipt.create({
+    item: itemB._id,
+    quantity: 1,
+    remainingQuantity: 1,
+    unitCost: 2,
+    createdBy: adminUser._id,
+  });
+
+  await agent
+    .post("/sales")
+    .send({
+      items: [
+        { itemId: itemA._id.toString(), quantity: 2 },
+        { itemId: itemB._id.toString(), quantity: 2 },
+      ],
+    })
+    .expect(400);
+
+  const freshA = await StockReceipt.findById(receiptA._id).lean();
+  const freshB = await StockReceipt.findById(receiptB._id).lean();
+  expect(freshA.remainingQuantity).toBe(5);
+  expect(freshB.remainingQuantity).toBe(1);
 });
 
 test("sales date filter and cursor works", async () => {
