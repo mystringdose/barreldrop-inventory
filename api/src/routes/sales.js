@@ -83,7 +83,11 @@ salesRouter.get("/", async (req, res, next) => {
       }
     }
 
-    let docs = await Sale.find(query).sort(sort).limit(lim + 1).populate("items.item", "name sku");
+    let docs = await Sale.find(query)
+      .sort(sort)
+      .limit(lim + 1)
+      .populate("items.item", "name sku")
+      .populate("createdBy", "name email");
 
     if (cursor && direction === "prev") docs = docs.reverse();
 

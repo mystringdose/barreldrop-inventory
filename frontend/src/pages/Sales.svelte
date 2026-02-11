@@ -24,6 +24,12 @@
       .join(", ");
   }
 
+  function doneByLabel(sale) {
+    if (sale?.createdBy?.name) return sale.createdBy.name;
+    if (sale?.createdBy?.email) return sale.createdBy.email;
+    return "—";
+  }
+
   let start = "";
   let end = "";
 
@@ -315,6 +321,7 @@
       <thead class="bg-slate-100 text-slate-600">
         <tr>
           <th class="text-left px-3 py-2">Sold At</th>
+          <th class="text-left px-3 py-2">Done By</th>
           <th class="text-left px-3 py-2">Items</th>
           <th class="text-left px-3 py-2">Total</th>
           <th class="text-left px-3 py-2">Profit</th>
@@ -325,6 +332,7 @@
         {#each sales as sale}
           <tr class="border-t align-top">
             <td class="px-3 py-2 align-top">{new Date(sale.soldAt).toLocaleString()}</td>
+            <td class="px-3 py-2 align-top">{doneByLabel(sale)}</td>
             <td class="px-3 py-2 text-sm">
               {#if sale.items && sale.items.length}
                 <div class="truncate text-sm" style="max-width:40rem" title={itemsSummary(sale.items)}>

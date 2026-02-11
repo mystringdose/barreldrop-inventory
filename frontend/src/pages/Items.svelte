@@ -257,12 +257,29 @@ import { authStore } from "../lib/stores.js";
   let prevCursor = null;
   let cursorStack = [];
   let currentCursor = null;
+  let itemListSearch = "";
+  let itemListSearchTimer = null;
+
+  function queueItemListSearch() {
+    if (itemListSearchTimer) clearTimeout(itemListSearchTimer);
+    itemListSearchTimer = setTimeout(() => {
+      load({ resetStack: true });
+    }, ITEM_SEARCH_DEBOUNCE_MS);
+  }
+
+  function clearItemListSearch() {
+    itemListSearch = "";
+    if (itemListSearchTimer) clearTimeout(itemListSearchTimer);
+    load({ resetStack: true });
+  }
 
   async function load({ cursorParam = null, direction = undefined, resetStack = false } = {}) {
     loading = true;
     error = "";
     try {
       const params = { limit };
+      const search = itemListSearch.trim();
+      if (search) params.q = search;
       if (cursorParam) params.cursor = cursorParam;
       if (direction) params.direction = direction;
       const res = await api.getItems(params);
@@ -382,6 +399,7 @@ import { authStore } from "../lib/stores.js";
   onMount(() => load({ resetStack: true }));
 
   onDestroy(() => {
+    if (itemListSearchTimer) clearTimeout(itemListSearchTimer);
     if (stockItemSearchTimer) clearTimeout(stockItemSearchTimer);
     latestStockItemSearchId += 1;
   });
@@ -528,6 +546,15 @@ import { authStore } from "../lib/stores.js";
     <div class="p-4 flex gap-3 items-center">
       <label class="text-sm">Per page</label>
       <input class="border rounded px-3 py-1 w-20 text-sm" type="number" min="1" bind:value={limit} on:change={() => load({ resetStack: true })} />
+      <input
+        class="border rounded px-3 py-1 text-sm w-64"
+        placeholder="Search items or SKU"
+        bind:value={itemListSearch}
+        on:input={queueItemListSearch}
+      />
+      {#if itemListSearch}
+        <button class="text-xs border rounded px-2 py-1" on:click={clearItemListSearch}>Clear</button>
+      {/if}
       <div class="ml-auto text-sm text-slate-500">{#if !currentCursor}A–Z{:else}Page{/if} • {items.length} items</div>
     </div>
     <table class="w-full text-sm">
