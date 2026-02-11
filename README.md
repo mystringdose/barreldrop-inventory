@@ -25,6 +25,10 @@ Lean inventory management app for Barrel Drop with a lightweight Svelte UI, Expr
 ## Environment
 API env example in `api/.env.example`.
 
+Session config (optional env vars):
+
+- `SESSION_TTL_HOURS` — auth session lifetime in hours (default 8)
+
 Rate limit config (optional env vars):
 
 - `RATE_LIMIT_WINDOW_MS` — window in ms (default 900000 = 15m)

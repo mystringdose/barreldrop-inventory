@@ -47,6 +47,7 @@ Create parameters in AWS SSM Parameter Store (Path: `/barreldrop/prod`):
 - `JWT_SECRET=...`
 - `CORS_ORIGIN=https://inventory.barreldrop.co.zw`
 - `COOKIE_SECURE=true`
+- `SESSION_TTL_HOURS=8`
 - `VITE_API_URL=https://api.barreldrop.co.zw`
 
 For local invoice uploads on EBS, do not set `AWS_REGION` or `S3_BUCKET`.

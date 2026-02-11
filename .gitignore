@@ -33,7 +33,7 @@ override.tf.json
 # CLI config / lock info (keep lock file)
 .terraformrc
 terraform.rc
-
+SSM.txt
 # OS
 .DS_Store
 EOF

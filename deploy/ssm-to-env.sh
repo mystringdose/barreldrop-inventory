@@ -12,7 +12,7 @@ aws ssm get-parameters-by-path \
     echo "${key}=${value}"
   done > /etc/barreldrop/all.env
 
-grep -E '^(PORT|MONGO_URI|JWT_SECRET|CORS_ORIGIN|COOKIE_SECURE|AWS_REGION|S3_BUCKET)=' /etc/barreldrop/all.env \
+grep -E '^(PORT|MONGO_URI|JWT_SECRET|CORS_ORIGIN|COOKIE_SECURE|SESSION_TTL_HOURS|AWS_REGION|S3_BUCKET)=' /etc/barreldrop/all.env \
   > /etc/barreldrop/api.env
 
 grep -E '^(VITE_API_URL)=' /etc/barreldrop/all.env \

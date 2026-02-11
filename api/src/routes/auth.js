@@ -21,11 +21,19 @@ const forgotSchema = z.object({ email: z.string().email() });
 const resetSchema = z.object({ token: z.string().min(1), newPassword: z.string().min(6) });
 const changeSchema = z.object({ currentPassword: z.string().min(6), newPassword: z.string().min(6) });
 
+const DEFAULT_SESSION_TTL_HOURS = 8;
+const parsedSessionTtlHours = Number(process.env.SESSION_TTL_HOURS);
+const SESSION_TTL_HOURS = Number.isFinite(parsedSessionTtlHours) && parsedSessionTtlHours > 0
+  ? parsedSessionTtlHours
+  : DEFAULT_SESSION_TTL_HOURS;
+const SESSION_TTL_SECONDS = Math.floor(SESSION_TTL_HOURS * 60 * 60);
+const SESSION_TTL_MS = SESSION_TTL_SECONDS * 1000;
+
 function issueToken(user) {
   return jwt.sign(
     { sub: user._id.toString(), role: user.role },
     process.env.JWT_SECRET,
-    { expiresIn: "7d" }
+    { expiresIn: SESSION_TTL_SECONDS }
   );
 }
 
@@ -34,7 +42,7 @@ function setAuthCookie(res, token) {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.COOKIE_SECURE === "true",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    maxAge: SESSION_TTL_MS,
   });
 }
 
