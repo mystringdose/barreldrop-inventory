@@ -340,6 +340,34 @@ test("stock receipt rejects invalid and missing items", async () => {
   expect(resMissing.body.error).toBe("Item not found");
 });
 
+test("stock receipt accepts multiple line items on one invoice", async () => {
+  const itemA = await Item.create({ name: "Bundle A", sku: "BND-A", createdBy: adminUser._id });
+  const itemB = await Item.create({ name: "Bundle B", sku: "BND-B", createdBy: adminUser._id });
+
+  const res = await agent
+    .post("/stock-receipts")
+    .field(
+      "lines",
+      JSON.stringify([
+        { itemId: itemA._id.toString(), quantity: 7, unitCost: 3.25 },
+        { itemId: itemB._id.toString(), quantity: 4, unitCost: 5.5 },
+      ])
+    )
+    .field("supplier", "Batch Supplier")
+    .attach("invoice", Buffer.from("invoice"), "invoice.txt")
+    .expect(200);
+
+  expect(Array.isArray(res.body.receipts)).toBe(true);
+  expect(res.body.receipts.length).toBe(2);
+  expect(res.body.receipt).toBeTruthy();
+
+  const saved = await StockReceipt.find({ invoiceFile: res.body.receipt.invoiceFile }).lean();
+  expect(saved.length).toBe(2);
+  expect(saved.map((r) => r.item.toString()).sort()).toEqual([itemA._id.toString(), itemB._id.toString()].sort());
+  expect(saved.map((r) => r.quantity).sort((a, b) => a - b)).toEqual([4, 7]);
+  expect(saved.every((r) => r.supplier === "Batch Supplier")).toBe(true);
+});
+
 test("audit cursor & date filter works", async () => {
   // create some audit logs
   await AuditLog.create({ actor: adminUser._id, action: "user.create", targetType: "User", targetId: adminUser._id, meta: { email: "foo@example.com" } });

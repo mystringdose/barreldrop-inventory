@@ -4,7 +4,8 @@
 
   let receipts = [];
   let loading = true;
-  let error = "";
+  let loadError = "";
+  let formError = "";
 
   // cursor paging
   let limit = 20;
@@ -30,6 +31,7 @@
   let unitCost = "";
   let supplier = "";
   let invoiceFile = null;
+  let receiptLines = [];
 
   function itemLabel(item) {
     return `${item.name} (${item.sku})`;
@@ -130,9 +132,54 @@
     highlightedItemIndex = -1;
   }
 
+  function resetLineDraft() {
+    itemId = "";
+    itemSearch = "";
+    selectedItem = null;
+    itemResults = [];
+    highlightedItemIndex = -1;
+    showItemResults = false;
+    quantity = "";
+    unitCost = "";
+  }
+
+  function addLineItem() {
+    formError = "";
+
+    if (!itemId || !selectedItem || !quantity || !unitCost) {
+      formError = "Select an item, quantity and unit cost before adding.";
+      return;
+    }
+    if (Number(quantity) <= 0) {
+      formError = "Quantity must be greater than 0";
+      return;
+    }
+    if (Number(unitCost) < 0) {
+      formError = "Unit cost must be >= 0";
+      return;
+    }
+
+    receiptLines = [
+      ...receiptLines,
+      {
+        itemId,
+        itemName: selectedItem.name,
+        itemSku: selectedItem.sku,
+        quantity: Number(quantity),
+        unitCost: Number(unitCost),
+      },
+    ];
+
+    resetLineDraft();
+  }
+
+  function removeLineItem(index) {
+    receiptLines = receiptLines.filter((_, idx) => idx !== index);
+  }
+
   async function load({ cursorParam = null, direction = undefined, resetStack = false } = {}) {
     loading = true;
-    error = "";
+    loadError = "";
     try {
       const receiptsRes = await api.getReceipts({ limit, cursor: cursorParam, direction });
       receipts = receiptsRes.receipts || [];
@@ -143,7 +190,7 @@
         currentCursor = cursorParam || null;
       }
     } catch (err) {
-      error = err.message || "Unable to load receipts.";
+      loadError = err.message || "Unable to load receipts.";
     } finally {
       loading = false;
     }
@@ -151,14 +198,17 @@
 
   async function submitReceipt() {
     try {
-      if (!itemId || !quantity || !unitCost) {
-        throw new Error("Item, quantity and unit cost are required");
-      }
-      if (Number(quantity) <= 0) throw new Error("Quantity must be greater than 0");
-      if (Number(unitCost) < 0) throw new Error("Unit cost must be >= 0");
+      formError = "";
+      if (!receiptLines.length) throw new Error("Add at least one item to this receipt");
       if (!invoiceFile) {
         throw new Error("Invoice file is required");
       }
+
+      const linesPayload = receiptLines.map((line) => ({
+        itemId: line.itemId,
+        quantity: line.quantity,
+        unitCost: line.unitCost,
+      }));
 
       let invoiceKey = null;
       try {
@@ -183,18 +233,14 @@
         await api.request("/stock-receipts", {
           method: "POST",
           body: {
-            itemId,
-            quantity: Number(quantity),
-            unitCost: Number(unitCost),
+            lines: linesPayload,
             supplier: supplier || undefined,
             invoiceKey,
           },
         });
       } catch (presignErr) {
         const form = new FormData();
-        form.append("itemId", itemId);
-        form.append("quantity", quantity);
-        form.append("unitCost", unitCost);
+        form.append("lines", JSON.stringify(linesPayload));
         if (supplier) form.append("supplier", supplier);
         if (invoiceFile) form.append("invoice", invoiceFile);
 
@@ -210,19 +256,15 @@
         }
       }
 
-      itemId = "";
-      itemSearch = "";
-      selectedItem = null;
-      itemResults = [];
-      highlightedItemIndex = -1;
-      quantity = "";
-      unitCost = "";
+      resetLineDraft();
+      receiptLines = [];
       supplier = "";
       invoiceFile = null;
+      formError = "";
 
       await load();
     } catch (err) {
-      error = err.message || "Unable to add receipt";
+      formError = err.message || "Unable to add receipt";
     }
   }
 
@@ -261,8 +303,8 @@
 
 <div class="bg-white rounded shadow-sm p-4 mb-6">
   <h3 class="font-semibold text-slate-900 mb-2">Add Stock (Invoice Required)</h3>
-  <div class="grid md:grid-cols-3 gap-3 text-sm">
-    <div class="relative">
+  <div class="grid md:grid-cols-4 gap-3 text-sm">
+    <div class="relative md:col-span-2">
       <input
         class="border rounded px-3 py-2 w-full"
         placeholder="Search item or SKU"
@@ -299,19 +341,69 @@
       {/if}
     </div>
     <input class="border rounded px-3 py-2" placeholder="Quantity" type="number" min="1" bind:value={quantity} />
-    <input class="border rounded px-3 py-2" placeholder="Unit cost" type="number" min="0" bind:value={unitCost} />
+    <input class="border rounded px-3 py-2" placeholder="Unit cost" type="number" min="0" step="0.01" bind:value={unitCost} />
+  </div>
+  <button class="mt-3 border border-slate-300 text-slate-700 px-4 py-2 rounded hover:bg-slate-50" on:click={addLineItem}>
+    Add Line Item
+  </button>
+
+  {#if receiptLines.length > 0}
+    <div class="mt-3 border rounded overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-slate-600">
+          <tr>
+            <th class="text-left px-3 py-2">Item</th>
+            <th class="text-left px-3 py-2">Qty</th>
+            <th class="text-left px-3 py-2">Unit Cost</th>
+            <th class="text-left px-3 py-2">Line Total</th>
+            <th class="text-left px-3 py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each receiptLines as line, idx}
+            <tr class="border-t">
+              <td class="px-3 py-2">
+                <p class="text-slate-900">{line.itemName}</p>
+                <p class="text-xs text-slate-500">{line.itemSku}</p>
+              </td>
+              <td class="px-3 py-2">{line.quantity}</td>
+              <td class="px-3 py-2">${line.unitCost.toFixed(2)}</td>
+              <td class="px-3 py-2">${(line.quantity * line.unitCost).toFixed(2)}</td>
+              <td class="px-3 py-2">
+                <button class="text-xs text-rose-600 hover:underline" type="button" on:click={() => removeLineItem(idx)}>Remove</button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {:else}
+    <p class="mt-3 text-sm text-slate-500">Add at least one line item before saving the receipt.</p>
+  {/if}
+
+  <div class="grid md:grid-cols-3 gap-3 text-sm mt-3">
     <input class="border rounded px-3 py-2" placeholder="Supplier" bind:value={supplier} />
     <input class="border rounded px-3 py-2" type="file" accept="application/pdf,image/*" on:change={(e) => (invoiceFile = e.target.files[0])} />
+    <div class="border rounded px-3 py-2 bg-slate-50 text-slate-600">
+      {receiptLines.length} line item{receiptLines.length === 1 ? "" : "s"} on this receipt
+    </div>
   </div>
-  <button class="mt-3 bg-slate-900 text-white px-4 py-2 rounded" on:click={submitReceipt}>
+  {#if formError}
+    <p class="mt-2 text-sm text-rose-600">{formError}</p>
+  {/if}
+  <button
+    class={`mt-3 bg-slate-900 text-white px-4 py-2 rounded ${receiptLines.length === 0 ? "opacity-60 cursor-not-allowed" : ""}`}
+    on:click={submitReceipt}
+    disabled={receiptLines.length === 0}
+  >
     Save Receipt
   </button>
 </div>
 
 {#if loading}
   <p class="text-slate-500">Loading...</p>
-{:else if error}
-  <p class="text-rose-600">{error}</p>
+{:else if loadError}
+  <p class="text-rose-600">{loadError}</p>
 {:else}
   <div class="bg-white rounded shadow-sm">
     <div class="p-4 flex gap-3 items-center">

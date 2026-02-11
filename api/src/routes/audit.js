@@ -60,7 +60,7 @@ auditRouter.get("/", async (req, res, next) => {
         if (!isNaN(e)) {
           // if provided as date-only (YYYY-MM-DD) its time will be 00:00:00 - make it end of day
           if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.end)) {
-            e.setHours(23, 59, 59, 999);
+            e.setUTCHours(23, 59, 59, 999);
           }
           createdAt.$lte = e;
         }

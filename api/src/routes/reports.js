@@ -11,9 +11,9 @@ function buildDateRange(start, end) {
   const range = {};
   if (start) range.$gte = new Date(start);
   if (end) {
-    // Make the end date inclusive for the whole day
+    // Make date-only end values inclusive for the whole UTC day.
     const d = new Date(end);
-    d.setHours(23, 59, 59, 999);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(end)) d.setUTCHours(23, 59, 59, 999);
     range.$lte = d;
   }
   return Object.keys(range).length ? range : null;

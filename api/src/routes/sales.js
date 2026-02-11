@@ -54,7 +54,8 @@ salesRouter.get("/", async (req, res, next) => {
     if (end) {
       let e = new Date(end);
       if (!isNaN(e)) {
-        if (/^\d{4}-\d{2}-\d{2}$/.test(end)) e.setHours(23, 59, 59, 999);
+        // Date-only inputs are parsed as UTC midnight, so use UTC end-of-day.
+        if (/^\d{4}-\d{2}-\d{2}$/.test(end)) e.setUTCHours(23, 59, 59, 999);
         dateFilter.$lte = e;
       }
     }

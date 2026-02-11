@@ -13,10 +13,20 @@ export const stockRouter = express.Router();
 
 const upload = multer({ dest: "./uploads" });
 
-const receiptSchema = z.object({
+const receiptLineSchema = z.object({
   itemId: z.string().min(1),
-  quantity: z.number().min(1),
-  unitCost: z.number().min(0),
+  quantity: z.coerce.number().min(1),
+  unitCost: z.coerce.number().min(0),
+  supplier: z.string().optional(),
+  purchasedAt: z.string().optional(),
+});
+
+const singleReceiptSchema = receiptLineSchema.extend({
+  invoiceKey: z.string().optional(),
+});
+
+const batchReceiptSchema = z.object({
+  lines: z.array(receiptLineSchema).min(1),
   supplier: z.string().optional(),
   purchasedAt: z.string().optional(),
   invoiceKey: z.string().optional(),
@@ -36,6 +46,39 @@ function decodeCursor(cursor) {
   } catch (err) {
     return null;
   }
+}
+
+function parseReceiptPayload(body) {
+  if (body.lines !== undefined) {
+    let parsedLines = body.lines;
+    if (typeof parsedLines === "string") {
+      try {
+        parsedLines = JSON.parse(parsedLines);
+      } catch (err) {
+        const parseErr = new Error("Invalid lines payload");
+        parseErr.status = 400;
+        throw parseErr;
+      }
+    }
+
+    const data = validate(batchReceiptSchema, {
+      ...body,
+      lines: parsedLines,
+    });
+
+    return {
+      invoiceKey: data.invoiceKey,
+      lines: data.lines.map((line) => ({
+        ...line,
+        supplier: line.supplier ?? data.supplier,
+        purchasedAt: line.purchasedAt ?? data.purchasedAt,
+      })),
+    };
+  }
+
+  const single = validate(singleReceiptSchema, body);
+  const { invoiceKey, ...line } = single;
+  return { invoiceKey, lines: [line] };
 }
 
 stockRouter.get("/", async (req, res, next) => {
@@ -120,41 +163,45 @@ stockRouter.post("/presign", async (req, res, next) => {
 
 stockRouter.post("/", upload.single("invoice"), async (req, res, next) => {
   try {
-    const data = validate(receiptSchema, {
-      ...req.body,
-      quantity: Number(req.body.quantity),
-      unitCost: Number(req.body.unitCost),
-    });
+    const { invoiceKey, lines } = parseReceiptPayload(req.body);
 
     const usingS3 = s3Enabled();
-    if (usingS3 && !data.invoiceKey) {
+    if (usingS3 && !invoiceKey) {
       return res.status(400).json({ error: "Invoice key is required for S3 uploads" });
     }
     if (!usingS3 && !req.file) {
       return res.status(400).json({ error: "Invoice file is required" });
     }
 
-    if (!mongoose.isValidObjectId(data.itemId)) {
-      return res.status(400).json({ error: "Invalid item id" });
+    const uniqueItemIds = [...new Set(lines.map((line) => line.itemId))];
+    for (const itemId of uniqueItemIds) {
+      if (!mongoose.isValidObjectId(itemId)) {
+        return res.status(400).json({ error: "Invalid item id" });
+      }
     }
 
-    const item = await Item.findById(data.itemId);
-    if (!item) return res.status(404).json({ error: "Item not found" });
+    const items = await Item.find({ _id: { $in: uniqueItemIds } }).select("_id").lean();
+    if (items.length !== uniqueItemIds.length) {
+      return res.status(404).json({ error: "Item not found" });
+    }
 
-    const receipt = await StockReceipt.create({
-      item: data.itemId,
-      quantity: data.quantity,
-      remainingQuantity: data.quantity,
-      unitCost: data.unitCost,
-      invoiceFile: req.file?.filename,
-      invoiceKey: data.invoiceKey,
-      invoiceStorage: usingS3 ? "s3" : "local",
-      supplier: data.supplier,
-      purchasedAt: data.purchasedAt ? new Date(data.purchasedAt) : new Date(),
-      createdBy: req.user._id,
-    });
+    const now = new Date();
+    const receipts = await StockReceipt.insertMany(
+      lines.map((line) => ({
+        item: line.itemId,
+        quantity: line.quantity,
+        remainingQuantity: line.quantity,
+        unitCost: line.unitCost,
+        invoiceFile: req.file?.filename,
+        invoiceKey,
+        invoiceStorage: usingS3 ? "s3" : "local",
+        supplier: line.supplier,
+        purchasedAt: line.purchasedAt ? new Date(line.purchasedAt) : now,
+        createdBy: req.user._id,
+      }))
+    );
 
-    res.json({ receipt });
+    res.json({ receipt: receipts[0], receipts });
   } catch (err) {
     next(err);
   }
