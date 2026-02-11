@@ -239,6 +239,29 @@ test("stock receipts cursor pagination works", async () => {
   expect(r2.body.receipts.length).toBe(2);
 });
 
+test("stock receipt rejects invalid and missing items", async () => {
+  const resInvalid = await agent
+    .post("/stock-receipts")
+    .field("itemId", "not-an-object-id")
+    .field("quantity", "5")
+    .field("unitCost", "2")
+    .attach("invoice", Buffer.from("invoice"), "invoice.txt")
+    .expect(400);
+
+  expect(resInvalid.body.error).toBe("Invalid item id");
+
+  const missingId = new mongoose.Types.ObjectId().toString();
+  const resMissing = await agent
+    .post("/stock-receipts")
+    .field("itemId", missingId)
+    .field("quantity", "5")
+    .field("unitCost", "2")
+    .attach("invoice", Buffer.from("invoice"), "invoice.txt")
+    .expect(404);
+
+  expect(resMissing.body.error).toBe("Item not found");
+});
+
 test("audit cursor & date filter works", async () => {
   // create some audit logs
   await AuditLog.create({ actor: adminUser._id, action: "user.create", targetType: "User", targetId: adminUser._id, meta: { email: "foo@example.com" } });

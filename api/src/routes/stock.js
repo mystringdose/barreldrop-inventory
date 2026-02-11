@@ -1,6 +1,7 @@
 import express from "express";
 import multer from "multer";
 import { z } from "zod";
+import mongoose from "mongoose";
 
 import { StockReceipt } from "../models/StockReceipt.js";
 import { Item } from "../models/Item.js";
@@ -131,6 +132,10 @@ stockRouter.post("/", upload.single("invoice"), async (req, res, next) => {
     }
     if (!usingS3 && !req.file) {
       return res.status(400).json({ error: "Invoice file is required" });
+    }
+
+    if (!mongoose.isValidObjectId(data.itemId)) {
+      return res.status(400).json({ error: "Invalid item id" });
     }
 
     const item = await Item.findById(data.itemId);
