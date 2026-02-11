@@ -9,6 +9,7 @@ import app from "../src/app.js";
 import { User } from "../src/models/User.js";
 import { Item } from "../src/models/Item.js";
 import { Sale } from "../src/models/Sale.js";
+import { Credit } from "../src/models/Credit.js";
 import { StockReceipt } from "../src/models/StockReceipt.js";
 import { AuditLog } from "../src/models/AuditLog.js";
 
@@ -38,6 +39,7 @@ afterEach(async () => {
   // clear collections but keep admin
   await Item.deleteMany({});
   await Sale.deleteMany({});
+  await Credit.deleteMany({});
   await StockReceipt.deleteMany({});
   await AuditLog.deleteMany({});
   await User.deleteMany({ _id: { $ne: adminUser._id } });
@@ -205,6 +207,82 @@ test("failed multi-line sale does not persist staged stock deductions", async ()
   const freshB = await StockReceipt.findById(receiptB._id).lean();
   expect(freshA.remainingQuantity).toBe(5);
   expect(freshB.remainingQuantity).toBe(1);
+});
+
+test("creating credit deducts stock but does not create a sale", async () => {
+  const item = await Item.create({
+    name: "Credit Item",
+    sku: "CRD-1",
+    sellingPrice: 12,
+    createdBy: adminUser._id,
+  });
+  const receipt = await StockReceipt.create({
+    item: item._id,
+    quantity: 5,
+    remainingQuantity: 5,
+    unitCost: 4,
+    createdBy: adminUser._id,
+  });
+
+  const res = await agent
+    .post("/credits")
+    .send({
+      customerName: "John Customer",
+      customerContact: "+263000000",
+      notes: "Will pay later",
+      items: [{ itemId: item._id.toString(), quantity: 2 }],
+    })
+    .expect(200);
+
+  expect(res.body.credit.status).toBe("open");
+  expect(res.body.credit.totalAmount).toBe(24);
+
+  const saleCount = await Sale.countDocuments({});
+  expect(saleCount).toBe(0);
+
+  const reloadedReceipt = await StockReceipt.findById(receipt._id).lean();
+  expect(reloadedReceipt.remainingQuantity).toBe(3);
+});
+
+test("converting credit creates sale and does not deduct stock again", async () => {
+  const item = await Item.create({
+    name: "Credit Convert Item",
+    sku: "CRD-2",
+    sellingPrice: 20,
+    createdBy: adminUser._id,
+  });
+  const receipt = await StockReceipt.create({
+    item: item._id,
+    quantity: 6,
+    remainingQuantity: 6,
+    unitCost: 7,
+    createdBy: adminUser._id,
+  });
+
+  const created = await agent
+    .post("/credits")
+    .send({
+      customerName: "Jane Customer",
+      items: [{ itemId: item._id.toString(), quantity: 2 }],
+    })
+    .expect(200);
+
+  const creditId = created.body.credit._id;
+
+  const converted = await agent.post(`/credits/${creditId}/convert`).expect(200);
+  expect(converted.body.saleId).toBeTruthy();
+
+  const sale = await Sale.findById(converted.body.saleId).lean();
+  expect(sale.totalRevenue).toBe(40);
+  expect(sale.totalCost).toBe(14);
+  expect(sale.profit).toBe(26);
+
+  const credit = await Credit.findById(creditId).lean();
+  expect(credit.status).toBe("converted");
+  expect(credit.convertedSale.toString()).toBe(converted.body.saleId.toString());
+
+  const reloadedReceipt = await StockReceipt.findById(receipt._id).lean();
+  expect(reloadedReceipt.remainingQuantity).toBe(4);
 });
 
 test("sales date filter and cursor works", async () => {

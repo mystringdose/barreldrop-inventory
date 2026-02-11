@@ -1,6 +1,7 @@
 import express from "express";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { Sale } from "../models/Sale.js";
+import { Credit } from "../models/Credit.js";
 
 export const reportsRouter = express.Router();
 
@@ -64,3 +65,61 @@ reportsRouter.get("/profit-loss", requireRole("admin"), async (req, res, next) =
   }
 });
 
+reportsRouter.get("/credits", async (req, res, next) => {
+  try {
+    const { start, end, status = "all", user } = req.query;
+    const dateRange = buildDateRange(start, end);
+
+    const query = {};
+    if (dateRange) query.creditedAt = dateRange;
+    if (status === "open" || status === "converted") query.status = status;
+
+    if (req.user.role === "admin") {
+      if (user && user !== "all") query.createdBy = user;
+    } else {
+      query.createdBy = req.user._id;
+    }
+
+    const credits = await Credit.find(query)
+      .sort({ creditedAt: -1, _id: -1 })
+      .populate("createdBy", "name email")
+      .populate("convertedBy", "name email")
+      .populate("convertedSale", "_id soldAt");
+
+    const totals = await Credit.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: null,
+          totalCredits: { $sum: 1 },
+          openCredits: {
+            $sum: { $cond: [{ $eq: ["$status", "open"] }, 1, 0] },
+          },
+          convertedCredits: {
+            $sum: { $cond: [{ $eq: ["$status", "converted"] }, 1, 0] },
+          },
+          totalCreditedAmount: { $sum: "$totalAmount" },
+          totalConvertedAmount: {
+            $sum: { $cond: [{ $eq: ["$status", "converted"] }, "$totalAmount", 0] },
+          },
+          outstandingAmount: {
+            $sum: { $cond: [{ $eq: ["$status", "open"] }, "$totalAmount", 0] },
+          },
+        },
+      },
+    ]);
+
+    const summary = totals[0] || {
+      totalCredits: 0,
+      openCredits: 0,
+      convertedCredits: 0,
+      totalCreditedAmount: 0,
+      totalConvertedAmount: 0,
+      outstandingAmount: 0,
+    };
+
+    res.json({ summary, credits });
+  } catch (err) {
+    next(err);
+  }
+});

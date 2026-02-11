@@ -7,6 +7,7 @@
   import Dashboard from "./pages/Dashboard.svelte";
   import Items from "./pages/Items.svelte";
   import Sales from "./pages/Sales.svelte";
+  import Credits from "./pages/Credits.svelte";
   import Reports from "./pages/Reports.svelte";
   import Users from "./pages/Users.svelte";
   import StockReceipts from "./pages/StockReceipts.svelte";
@@ -19,6 +20,7 @@
     "/items": Items,
     "/stock": StockReceipts,
     "/sales": Sales,
+    "/credits": Credits,
     "/reports": Reports,
     "/audit": Audit,
     "/users": Users,
@@ -56,6 +58,7 @@
             <a href="#/items" class="text-slate-700 hover:text-slate-900">Items</a>
             <a href="#/stock" class="text-slate-700 hover:text-slate-900">Stock Receipts</a>
             <a href="#/sales" class="text-slate-700 hover:text-slate-900">Sales</a>
+            <a href="#/credits" class="text-slate-700 hover:text-slate-900">Credits</a>
             <a href="#/reports" class="text-slate-700 hover:text-slate-900">Reports</a>
             {#if $authStore.user.role === "admin"}
               <a href="#/users" class="text-slate-700 hover:text-slate-900">Users</a>

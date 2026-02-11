@@ -66,6 +66,10 @@ export const api = {
     const qs = new URLSearchParams(params).toString();
     return request(`/sales${qs ? `?${qs}` : ""}`);
   },
+  async getCredits(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/credits${qs ? `?${qs}` : ""}`);
+  },
   async getReceipts(params = {}) {
     const qs = new URLSearchParams(params).toString();
     return request(`/stock-receipts${qs ? `?${qs}` : ""}`);
@@ -82,6 +86,12 @@ export const api = {
   async createSale(payload) {
     return request("/sales", { method: "POST", body: payload });
   },
+  async createCredit(payload) {
+    return request("/credits", { method: "POST", body: payload });
+  },
+  async convertCredit(id) {
+    return request(`/credits/${id}/convert`, { method: "POST" });
+  },
   async salesReport(params = {}) {
     const qs = new URLSearchParams(params).toString();
     return request(`/reports/sales${qs ? `?${qs}` : ""}`);
@@ -89,6 +99,10 @@ export const api = {
   async profitLoss(params = {}) {
     const qs = new URLSearchParams(params).toString();
     return request(`/reports/profit-loss${qs ? `?${qs}` : ""}`);
+  },
+  async creditReport(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/reports/credits${qs ? `?${qs}` : ""}`);
   },
   async listUsers() {
     return request("/users");

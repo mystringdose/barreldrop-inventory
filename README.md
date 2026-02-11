@@ -8,7 +8,9 @@ Lean inventory management app for Barrel Drop with a lightweight Svelte UI, Expr
 - Stock receipts with required invoice upload
 - S3-backed invoice uploads with presigned URLs (optional)
 - FIFO inventory consumption on sales
+- Customer credits (deduct stock now, convert to sale later)
 - Sales report (per user) and admin profit/loss
+- Credit report with outstanding vs converted totals
 - User management (admin)
 - Mobile SKU barcode scanning (device support required)
 - Bulk CSV import for items
@@ -41,7 +43,7 @@ Audit logging:
 - Audit entries are saved to the `AuditLog` collection and include actor, action, target, IP, and user agent.
 - Admins can view recent logs via `GET /audit` (admin-only). Supports cursor pagination via `limit` and `cursor` (opaque base64), `direction` (`next` / `prev`), and optional `start` / `end` date filters (ISO or `YYYY-MM-DD`, end is inclusive).
 
-- Collections with larger datasets support cursor pagination: `GET /items`, `GET /users`, `GET /sales`, and `GET /stock-receipts` return `{ items|users|sales|receipts, nextCursor, prevCursor, limit, hasMore }` and accept `limit`, `cursor`, and `direction` parameters. Sales also supports `start`/`end` (inclusive end) to restrict by `soldAt`.
+- Collections with larger datasets support cursor pagination: `GET /items`, `GET /users`, `GET /sales`, `GET /credits`, and `GET /stock-receipts` return `{ items|users|sales|credits|receipts, nextCursor, prevCursor, limit, hasMore }` and accept `limit`, `cursor`, and `direction` parameters. Sales and credits support `start`/`end` (inclusive end) date filters.
 - `GET /items` also supports `q` for server-side name/SKU search (used by the Sales item picker).
 
 ## Notes

@@ -9,6 +9,7 @@ import { userRouter } from "./routes/users.js";
 import { itemRouter } from "./routes/items.js";
 import { stockRouter } from "./routes/stock.js";
 import { salesRouter } from "./routes/sales.js";
+import { creditRouter } from "./routes/credits.js";
 import { reportsRouter } from "./routes/reports.js";
 import { auditRouter } from "./routes/audit.js";
 
@@ -54,6 +55,7 @@ app.use("/users", userRouter);
 app.use("/items", itemRouter);
 app.use("/stock-receipts", stockRouter);
 app.use("/sales", salesRouter);
+app.use("/credits", creditRouter);
 app.use("/reports", reportsRouter);
 app.use("/audit", auditRouter);
 
