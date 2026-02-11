@@ -1,15 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 180" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 360" role="img" aria-labelledby="title desc">
   <title id="title">BarrelDrop</title>
   <desc id="desc">BarrelDrop Delivery Services logo</desc>
-  <rect width="640" height="180" fill="#ffffff"/>
   <g fill="#2b2d47">
-    <circle cx="62" cy="44" r="12"/>
-    <path d="M94 56c-7-14-19-20-31-17-11 3-18 13-19 26H20c-5 0-9 4-9 9s4 9 9 9h39l-16 28c-2 4-1 9 3 12 4 2 9 1 12-2l27-30 21 19c4 3 10 3 13-1 4-4 4-9 0-13L94 56z"/>
-    <rect x="14" y="87" width="58" height="8" rx="4"/>
-    <rect x="6" y="102" width="52" height="8" rx="4"/>
-    <rect x="20" y="117" width="42" height="8" rx="4"/>
-  </g>
-  <text x="128" y="96" fill="#2b2d47" font-size="64" font-family="Arial, sans-serif" font-weight="700">BarrelDrop</text>
-  <text x="130" y="132" fill="#2b2d47" font-size="18" font-family="Arial, sans-serif" letter-spacing="8">DELIVERY SERVICES</text>
-</svg>
+    <g transform="translate(18 16)">
+      <circle cx="170" cy="54" r="28"/>
+      <rect x="238" y="36" width="62" height="62" rx="6" transform="rotate(8 269 67)"/>
+      <path d="M124 118c16-24 30-34 50-34 23 0 37 14 44 34l12 27 66-31c8-4 18-1 22 7s2 18-6 23l-72 53c-11 8-27 6-36-5l-15-19-96 75c-8 6-19 5-25-3-6-8-5-19 3-25l83-66-66-1c-9 0-16-8-16-16s7-16 16-16h63l-18-30-47 11c-9 2-18-3-20-12-2-8 3-17 12-19l66-24c10-3 18-1 25 8l15 23z"/>
+      <path d="M162 214l-16 13 18 23-42 45c-7 8-6 20 2 27 8 7 20 6 27-2l58-62c7-8 8-19 1-27l-31-39c-4-6-13-7-19-2z"/>
+      <rect x="0" y="132" width="76" height="13" rx="6"/>
+      <rect x="0" y="158" width="152" height="13" rx="6"/>
+      <rect x="24" y="184" width="124" height="13" rx="6"/>
+      <rect x="52" y="210" width="94" height="13" rx="6"/>
+      <rect x="18" y="236" width="110" height="13" rx="6"/>
+    </g>
 
+    <text
+      x="338"
+      y="246"
+      font-size="168"
+      font-family="'Arial Black','Helvetica Neue',Arial,sans-serif"
+      font-weight="900"
+      letter-spacing="-2"
+    >
+      BarrelDrop
+    </text>
+    <text
+      x="344"
+      y="326"
+      font-size="58"
+      font-family="'Arial Narrow','Helvetica Neue',Arial,sans-serif"
+      font-style="italic"
+      font-weight="700"
+      letter-spacing="20"
+    >
+      DELIVERY SERVICES
+    </text>
+  </g>
+</svg>

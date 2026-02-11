@@ -53,7 +53,6 @@
         </div>
         <nav class="border-t bg-slate-50">
           <div class="max-w-6xl mx-auto px-4 py-2 flex flex-wrap items-center gap-4 text-sm">
-            <img src="/barreldrop-logo.svg" alt="BarrelDrop" class="h-7 w-auto hidden sm:block" />
             <a href="#/" class="text-slate-700 hover:text-slate-900">Dashboard</a>
             <a href="#/items" class="text-slate-700 hover:text-slate-900">Items</a>
             <a href="#/stock" class="text-slate-700 hover:text-slate-900">Stock Receipts</a>
