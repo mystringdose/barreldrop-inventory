@@ -1,8 +1,7 @@
 <script>
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { api, apiUrl } from "../lib/api.js";
 
-  let items = [];
   let sales = [];
   let error = "";
   let loading = true;
@@ -28,11 +27,123 @@
   let start = "";
   let end = "";
 
+  const ITEM_SEARCH_LIMIT = 20;
+  const ITEM_SEARCH_DEBOUNCE_MS = 250;
+
   let lineItemId = "";
+  let lineItemSearch = "";
   let lineQty = "";
   let saleLines = [];
-  $: selectedItem = items.find((i) => i._id === lineItemId);
+
+  let selectedItem = null;
+  let showItemResults = false;
+  let itemResults = [];
+  let itemSearchLoading = false;
+  let itemSearchError = "";
+  let highlightedItemIndex = -1;
+  let itemSearchTimer = null;
+  let latestItemSearchId = 0;
+
   $: selectedSellingPrice = Number(selectedItem?.sellingPrice ?? 0);
+
+  function itemLabel(item) {
+    return `${item.name} (${item.sku})`;
+  }
+
+  async function runItemSearch(rawTerm = lineItemSearch) {
+    const term = String(rawTerm || "").trim();
+    const requestId = ++latestItemSearchId;
+    itemSearchLoading = true;
+    itemSearchError = "";
+
+    try {
+      const res = await api.getItems({ limit: ITEM_SEARCH_LIMIT, q: term });
+      if (requestId !== latestItemSearchId) return;
+
+      itemResults = res.items || [];
+      highlightedItemIndex = itemResults.length ? 0 : -1;
+    } catch (err) {
+      if (requestId !== latestItemSearchId) return;
+      itemResults = [];
+      highlightedItemIndex = -1;
+      itemSearchError = err.message || "Unable to search items.";
+    } finally {
+      if (requestId === latestItemSearchId) {
+        itemSearchLoading = false;
+      }
+    }
+  }
+
+  function queueItemSearch(rawTerm = lineItemSearch) {
+    if (itemSearchTimer) clearTimeout(itemSearchTimer);
+    itemSearchTimer = setTimeout(() => {
+      runItemSearch(rawTerm);
+    }, ITEM_SEARCH_DEBOUNCE_MS);
+  }
+
+  function onItemSearchFocus() {
+    showItemResults = true;
+    queueItemSearch(lineItemSearch);
+  }
+
+  function onItemSearchInput(event) {
+    lineItemSearch = event.currentTarget.value;
+    showItemResults = true;
+    itemSearchError = "";
+    itemResults = [];
+    highlightedItemIndex = -1;
+
+    if (lineItemId && selectedItem && lineItemSearch !== itemLabel(selectedItem)) {
+      lineItemId = "";
+      selectedItem = null;
+    }
+
+    queueItemSearch(lineItemSearch);
+  }
+
+  function onItemSearchKeydown(event) {
+    if (!showItemResults) return;
+    if (!itemResults.length) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      highlightedItemIndex = Math.min(highlightedItemIndex + 1, itemResults.length - 1);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      highlightedItemIndex = Math.max(highlightedItemIndex - 1, 0);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const candidate = itemResults[highlightedItemIndex];
+      if (candidate && candidate.status !== "frozen") {
+        chooseItem(candidate);
+      }
+      return;
+    }
+
+    if (event.key === "Escape") {
+      showItemResults = false;
+    }
+  }
+
+  function onItemSearchBlur() {
+    setTimeout(() => {
+      showItemResults = false;
+    }, 120);
+  }
+
+  function chooseItem(item) {
+    lineItemId = item._id;
+    selectedItem = item;
+    lineItemSearch = itemLabel(item);
+    showItemResults = false;
+    highlightedItemIndex = -1;
+  }
 
   async function load({ cursorParam = null, direction = undefined, resetStack = false } = {}) {
     loading = true;
@@ -43,8 +154,8 @@
       if (direction) params.direction = direction;
       if (start) params.start = start;
       if (end) params.end = end;
-      const [itemsRes, salesRes] = await Promise.all([api.listItems(), api.getSales(params)]);
-      items = itemsRes.items;
+
+      const salesRes = await api.getSales(params);
       sales = salesRes.sales || [];
       nextCursor = salesRes.nextCursor || null;
       prevCursor = salesRes.prevCursor || null;
@@ -60,20 +171,27 @@
   }
 
   function addLine() {
-    if (!lineItemId || !lineQty) return;
-    const item = items.find((i) => i._id === lineItemId);
-    if (!item) return;
+    if (!lineItemId || !lineQty || !selectedItem) return;
+    if (selectedItem.status === "frozen") return;
+    if (Number(lineQty) <= 0) return;
+
     saleLines = [
       ...saleLines,
       {
         itemId: lineItemId,
-        name: item?.name,
+        name: selectedItem.name,
         quantity: Number(lineQty),
-        unitPrice: Number(item.sellingPrice ?? 0),
+        unitPrice: Number(selectedItem.sellingPrice ?? 0),
       },
     ];
+
     lineItemId = "";
+    lineItemSearch = "";
     lineQty = "";
+    selectedItem = null;
+    itemResults = [];
+    highlightedItemIndex = -1;
+    itemSearchError = "";
   }
 
   async function submitSale() {
@@ -92,7 +210,15 @@
     }
   }
 
-  onMount(() => load({ resetStack: true }));
+  onMount(() => {
+    load({ resetStack: true });
+    runItemSearch("");
+  });
+
+  onDestroy(() => {
+    if (itemSearchTimer) clearTimeout(itemSearchTimer);
+    latestItemSearchId += 1;
+  });
 </script>
 
 <h2 class="text-lg font-semibold text-slate-900 mb-4">Sales</h2>
@@ -100,14 +226,43 @@
 <div class="bg-white rounded shadow-sm p-4 mb-6">
   <h3 class="font-semibold text-slate-900 mb-2">New Sale</h3>
   <div class="grid md:grid-cols-4 gap-3 text-sm">
-    <select class="border rounded px-3 py-2" bind:value={lineItemId}>
-      <option value="">Select Item</option>
-      {#each items as item}
-        <option value={item._id} disabled={item.status === "frozen"}>
-          {item.name} (${Number(item.sellingPrice ?? 0).toFixed(2)} • {item.availableQuantity} available)
-        </option>
-      {/each}
-    </select>
+    <div class="relative">
+      <input
+        class="border rounded px-3 py-2 w-full"
+        placeholder="Search item or SKU"
+        value={lineItemSearch}
+        on:focus={onItemSearchFocus}
+        on:input={onItemSearchInput}
+        on:keydown={onItemSearchKeydown}
+        on:blur={onItemSearchBlur}
+      />
+      {#if showItemResults}
+        <div class="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto rounded border bg-white shadow">
+          {#if itemSearchLoading}
+            <div class="px-3 py-2 text-slate-500">Searching...</div>
+          {:else if itemSearchError}
+            <div class="px-3 py-2 text-rose-600">{itemSearchError}</div>
+          {:else if itemResults.length === 0}
+            <div class="px-3 py-2 text-slate-500">No matching items</div>
+          {:else}
+            {#each itemResults as item, idx}
+              <button
+                type="button"
+                class={`block w-full px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-60 ${highlightedItemIndex === idx ? "bg-slate-100" : "hover:bg-slate-50"}`}
+                on:mousedown|preventDefault={() => chooseItem(item)}
+                on:mouseenter={() => (highlightedItemIndex = idx)}
+                disabled={item.status === "frozen"}
+              >
+                <p class="text-sm text-slate-900">{item.name}</p>
+                <p class="text-xs text-slate-500">
+                  {item.sku} · ${Number(item.sellingPrice ?? 0).toFixed(2)} · {item.availableQuantity} available{item.status === "frozen" ? " · Frozen" : ""}
+                </p>
+              </button>
+            {/each}
+          {/if}
+        </div>
+      {/if}
+    </div>
     <input class="border rounded px-3 py-2" placeholder="Qty" type="number" min="1" bind:value={lineQty} />
     <input class="border rounded px-3 py-2 bg-slate-50 text-slate-700" value={`$${selectedSellingPrice.toFixed(2)}`} readonly />
     <button class="bg-slate-900 text-white rounded px-3 py-2" on:click={addLine}>Add</button>

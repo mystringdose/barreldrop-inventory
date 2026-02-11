@@ -1,5 +1,5 @@
 <script>
-import { onMount } from "svelte";
+import { onDestroy, onMount } from "svelte";
 import { api, apiUrl } from "../lib/api.js";
 import { authStore } from "../lib/stores.js";
 
@@ -8,6 +8,8 @@ import { authStore } from "../lib/stores.js";
   let error = "";
 
   const categories = ["whiskey", "wine", "rum", "beer", "vodka", "cognac", "gin", "other"];
+  const ITEM_SEARCH_LIMIT = 20;
+  const ITEM_SEARCH_DEBOUNCE_MS = 250;
 
   let name = "";
   let sku = "";
@@ -39,10 +41,124 @@ import { authStore } from "../lib/stores.js";
   let stockInvoiceFile = null;
   let stockError = "";
   let stockLoading = false;
+  let stockItemSearch = "";
+  let stockSelectedItem = null;
+  let stockItemResults = [];
+  let stockShowItemResults = false;
+  let stockItemSearchLoading = false;
+  let stockItemSearchError = "";
+  let stockHighlightedItemIndex = -1;
+  let stockItemSearchTimer = null;
+  let latestStockItemSearchId = 0;
+
+  function stockItemLabel(item) {
+    return `${item.name} (${item.sku})`;
+  }
+
+  async function runStockItemSearch(rawTerm = stockItemSearch) {
+    const term = String(rawTerm || "").trim();
+    const requestId = ++latestStockItemSearchId;
+    stockItemSearchLoading = true;
+    stockItemSearchError = "";
+
+    try {
+      const res = await api.getItems({ limit: ITEM_SEARCH_LIMIT, q: term });
+      if (requestId !== latestStockItemSearchId) return;
+
+      stockItemResults = res.items || [];
+      stockHighlightedItemIndex = stockItemResults.length ? 0 : -1;
+    } catch (err) {
+      if (requestId !== latestStockItemSearchId) return;
+      stockItemResults = [];
+      stockHighlightedItemIndex = -1;
+      stockItemSearchError = err.message || "Unable to search items.";
+    } finally {
+      if (requestId === latestStockItemSearchId) {
+        stockItemSearchLoading = false;
+      }
+    }
+  }
+
+  function queueStockItemSearch(rawTerm = stockItemSearch) {
+    if (stockItemSearchTimer) clearTimeout(stockItemSearchTimer);
+    stockItemSearchTimer = setTimeout(() => {
+      runStockItemSearch(rawTerm);
+    }, ITEM_SEARCH_DEBOUNCE_MS);
+  }
+
+  function onStockItemSearchFocus() {
+    stockShowItemResults = true;
+    queueStockItemSearch(stockItemSearch);
+  }
+
+  function onStockItemSearchInput(event) {
+    stockItemSearch = event.currentTarget.value;
+    stockShowItemResults = true;
+    stockItemSearchError = "";
+    stockItemResults = [];
+    stockHighlightedItemIndex = -1;
+
+    if (stockItemId && stockSelectedItem && stockItemSearch !== stockItemLabel(stockSelectedItem)) {
+      stockItemId = "";
+      stockSelectedItem = null;
+    }
+
+    queueStockItemSearch(stockItemSearch);
+  }
+
+  function onStockItemSearchKeydown(event) {
+    if (!stockShowItemResults) return;
+    if (!stockItemResults.length) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      stockHighlightedItemIndex = Math.min(stockHighlightedItemIndex + 1, stockItemResults.length - 1);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      stockHighlightedItemIndex = Math.max(stockHighlightedItemIndex - 1, 0);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const candidate = stockItemResults[stockHighlightedItemIndex];
+      if (candidate) {
+        chooseStockItem(candidate);
+      }
+      return;
+    }
+
+    if (event.key === "Escape") {
+      stockShowItemResults = false;
+    }
+  }
+
+  function onStockItemSearchBlur() {
+    setTimeout(() => {
+      stockShowItemResults = false;
+    }, 120);
+  }
+
+  function chooseStockItem(item) {
+    stockItemId = item._id;
+    stockSelectedItem = item;
+    stockItemSearch = stockItemLabel(item);
+    stockShowItemResults = false;
+    stockHighlightedItemIndex = -1;
+  }
 
   function openAddStock(item) {
     showStockModal = true;
     stockItemId = item?._id || "";
+    stockSelectedItem = item || null;
+    stockItemSearch = item ? stockItemLabel(item) : "";
+    stockItemResults = [];
+    stockShowItemResults = false;
+    stockItemSearchError = "";
+    stockHighlightedItemIndex = -1;
     stockQuantity = "";
     stockUnitCost = "";
     stockSupplier = "";
@@ -122,6 +238,11 @@ import { authStore } from "../lib/stores.js";
       }
 
       showStockModal = false;
+      stockItemId = "";
+      stockSelectedItem = null;
+      stockItemSearch = "";
+      stockItemResults = [];
+      stockHighlightedItemIndex = -1;
       await load();
     } catch (err) {
       stockError = err.message || "Unable to add stock";
@@ -259,6 +380,11 @@ import { authStore } from "../lib/stores.js";
   }
 
   onMount(() => load({ resetStack: true }));
+
+  onDestroy(() => {
+    if (stockItemSearchTimer) clearTimeout(stockItemSearchTimer);
+    latestStockItemSearchId += 1;
+  });
 </script>
 
 <h2 class="text-lg font-semibold text-slate-900 mb-4">Stock Items</h2>
@@ -330,12 +456,42 @@ import { authStore } from "../lib/stores.js";
     <div class="bg-white rounded p-4 w-full max-w-md">
       <h3 class="font-semibold mb-2">Add Stock</h3>
       <div class="grid gap-2 text-sm">
-        <select class="border rounded px-3 py-2" bind:value={stockItemId}>
-          <option value="">Select Item</option>
-          {#each items as it}
-            <option value={it._id}>{it.name} ({it.sku})</option>
-          {/each}
-        </select>
+        <div class="relative">
+          <input
+            class="border rounded px-3 py-2 w-full"
+            placeholder="Search item or SKU"
+            value={stockItemSearch}
+            on:focus={onStockItemSearchFocus}
+            on:input={onStockItemSearchInput}
+            on:keydown={onStockItemSearchKeydown}
+            on:blur={onStockItemSearchBlur}
+          />
+          {#if stockShowItemResults}
+            <div class="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto rounded border bg-white shadow">
+              {#if stockItemSearchLoading}
+                <div class="px-3 py-2 text-slate-500">Searching...</div>
+              {:else if stockItemSearchError}
+                <div class="px-3 py-2 text-rose-600">{stockItemSearchError}</div>
+              {:else if stockItemResults.length === 0}
+                <div class="px-3 py-2 text-slate-500">No matching items</div>
+              {:else}
+                {#each stockItemResults as item, idx}
+                  <button
+                    type="button"
+                    class={`block w-full px-3 py-2 text-left ${stockHighlightedItemIndex === idx ? "bg-slate-100" : "hover:bg-slate-50"}`}
+                    on:mousedown|preventDefault={() => chooseStockItem(item)}
+                    on:mouseenter={() => (stockHighlightedItemIndex = idx)}
+                  >
+                    <p class="text-sm text-slate-900">{item.name}</p>
+                    <p class="text-xs text-slate-500">
+                      {item.sku} · ${Number(item.sellingPrice ?? 0).toFixed(2)} · {item.availableQuantity} available{item.status === "frozen" ? " · Frozen" : ""}
+                    </p>
+                  </button>
+                {/each}
+              {/if}
+            </div>
+          {/if}
+        </div>
         <input class="border rounded px-3 py-2" placeholder="Quantity" type="number" min="1" bind:value={stockQuantity} />
         <input class="border rounded px-3 py-2" placeholder="Unit cost" type="number" min="0" step="0.01" bind:value={stockUnitCost} />
         <input class="border rounded px-3 py-2" placeholder="Supplier" bind:value={stockSupplier} />
@@ -344,7 +500,16 @@ import { authStore } from "../lib/stores.js";
           <p class="text-xs text-rose-600 mt-1">{stockError}</p>
         {/if}
         <div class="flex justify-end gap-2 mt-2">
-          <button class="border px-4 py-2 rounded" on:click={() => (showStockModal = false)}>Cancel</button>
+          <button class="border px-4 py-2 rounded" on:click={() => {
+            showStockModal = false;
+            stockItemSearch = "";
+            stockItemId = "";
+            stockSelectedItem = null;
+            stockItemResults = [];
+            stockShowItemResults = false;
+            stockItemSearchError = "";
+            stockHighlightedItemIndex = -1;
+          }}>Cancel</button>
           <button class="bg-slate-900 text-white px-4 py-2 rounded" on:click={submitStock}>
             {stockLoading ? "Saving..." : "Save"}
           </button>

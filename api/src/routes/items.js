@@ -53,31 +53,54 @@ function decodeCursor(cursor) {
   }
 }
 
+function escapeRegex(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function andQuery(base, extra) {
+  if (!base || Object.keys(base).length === 0) return extra || {};
+  if (!extra || Object.keys(extra).length === 0) return base;
+  return { $and: [base, extra] };
+}
+
 // Cursor pagination for items by name (alphabetical)
 itemRouter.get("/", async (req, res, next) => {
   try {
-    const { limit = 50, cursor, direction = "next" } = req.query;
+    const { limit = 50, cursor, direction = "next", q = "" } = req.query;
     const lim = Math.min(200, Number(limit) || 50);
+    const search = String(q || "").trim();
 
     let sort = { name: 1, _id: 1 };
     let query = {};
+    if (search) {
+      const regex = new RegExp(escapeRegex(search), "i");
+      const searchClauses = [{ name: regex }, { sku: regex }];
+      if (/^[0-9a-fA-F]{24}$/.test(search)) {
+        searchClauses.push({ _id: search });
+      }
+      query = {
+        $or: searchClauses,
+      };
+    }
 
     if (cursor) {
       const parsed = decodeCursor(cursor);
       if (parsed && parsed.name) {
+        let cursorQuery = {};
         if (direction === "prev") {
           // fetch names before (lexicographically smaller) -> newer in reverse order
-          query = {
+          cursorQuery = {
             $or: [{ name: { $lt: parsed.name } }, { name: parsed.name, _id: { $lt: parsed._id } }],
           };
           sort = { name: -1, _id: -1 };
         } else {
           // fetch names after (greater than)
-          query = {
+          cursorQuery = {
             $or: [{ name: { $gt: parsed.name } }, { name: parsed.name, _id: { $gt: parsed._id } }],
           };
           sort = { name: 1, _id: 1 };
         }
+        query = andQuery(query, cursorQuery);
       }
     }
 

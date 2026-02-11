@@ -42,6 +42,7 @@ Audit logging:
 - Admins can view recent logs via `GET /audit` (admin-only). Supports cursor pagination via `limit` and `cursor` (opaque base64), `direction` (`next` / `prev`), and optional `start` / `end` date filters (ISO or `YYYY-MM-DD`, end is inclusive).
 
 - Collections with larger datasets support cursor pagination: `GET /items`, `GET /users`, `GET /sales`, and `GET /stock-receipts` return `{ items|users|sales|receipts, nextCursor, prevCursor, limit, hasMore }` and accept `limit`, `cursor`, and `direction` parameters. Sales also supports `start`/`end` (inclusive end) to restrict by `soldAt`.
+- `GET /items` also supports `q` for server-side name/SKU search (used by the Sales item picker).
 
 ## Notes
 - Invoice uploads are stored on the API container filesystem under `api/uploads`.
