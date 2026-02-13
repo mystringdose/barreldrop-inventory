@@ -21,6 +21,7 @@ const CreditSchema = new mongoose.Schema(
     totalAmount: { type: Number, required: true },
     totalCost: { type: Number, required: true },
     status: { type: String, enum: ["open", "converted"], default: "open" },
+    conversionInProgress: { type: Boolean, default: false },
     creditedAt: { type: Date, default: Date.now },
     convertedAt: { type: Date },
     convertedSale: { type: mongoose.Schema.Types.ObjectId, ref: "Sale" },

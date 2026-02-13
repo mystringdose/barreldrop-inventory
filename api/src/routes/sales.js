@@ -6,6 +6,9 @@ import { z } from "zod";
 import { Sale } from "../models/Sale.js";
 import { Item } from "../models/Item.js";
 import { StockReceipt } from "../models/StockReceipt.js";
+import { buildDateRange } from "../lib/dateRange.js";
+import { roundMoney, roundNumber } from "../lib/money.js";
+import { applyStockDeductions, planReceiptConsumption, rollbackStockDeductions } from "../lib/stock.js";
 import { validate } from "../lib/validate.js";
 import { requireAuth } from "../middleware/auth.js";
 
@@ -16,7 +19,7 @@ const saleSchema = z.object({
     .array(
       z.object({
         itemId: z.string().min(1),
-        quantity: z.number().min(1),
+        quantity: z.coerce.number().positive().finite(),
       })
     )
     .min(1),
@@ -41,28 +44,16 @@ function decodeCursor(cursor) {
 
 salesRouter.get("/", async (req, res, next) => {
   try {
-    const { start, end, limit = 20, cursor, direction = "next" } = req.query;
+    const { start, end, limit = 20, cursor, direction = "next", tzOffsetMinutes } = req.query;
     const lim = Math.min(200, Number(limit) || 20);
 
     // Build base query: respect role and optional date range
     const base = req.user.role === "admin" ? {} : { createdBy: req.user._id };
-    const dateFilter = {};
-    if (start) {
-      const s = new Date(start);
-      if (!isNaN(s)) dateFilter.$gte = s;
-    }
-    if (end) {
-      let e = new Date(end);
-      if (!isNaN(e)) {
-        // Date-only inputs are parsed as UTC midnight, so use UTC end-of-day.
-        if (/^\d{4}-\d{2}-\d{2}$/.test(end)) e.setUTCHours(23, 59, 59, 999);
-        dateFilter.$lte = e;
-      }
-    }
+    const dateFilter = buildDateRange({ start, end, tzOffsetMinutes });
 
     let sort = { soldAt: -1, _id: -1 };
     let query = { ...base };
-    if (Object.keys(dateFilter).length) query.soldAt = dateFilter;
+    if (dateFilter) query.soldAt = dateFilter;
 
     if (cursor) {
       const parsed = decodeCursor(cursor);
@@ -105,22 +96,23 @@ salesRouter.get("/", async (req, res, next) => {
 });
 
 salesRouter.post("/", async (req, res, next) => {
+  let appliedDeductions = [];
   try {
-    const payload = validate(saleSchema, {
-      ...req.body,
-      items: req.body.items?.map((item) => ({
-        ...item,
-        quantity: Number(item.quantity),
-      })),
-    });
+    const payload = validate(saleSchema, req.body);
 
     const saleItems = [];
     let totalRevenue = 0;
     let totalCost = 0;
     const stagedReceiptRemaining = new Map();
-    const touchedReceipts = new Map();
+    const plannedDeductions = new Map();
 
     for (const line of payload.items) {
+      if (!mongoose.isValidObjectId(line.itemId)) {
+        const err = new Error("Invalid item id");
+        err.status = 400;
+        throw err;
+      }
+
       const item = await Item.findById(line.itemId);
       if (!item) {
         const err = new Error("Item not found");
@@ -141,53 +133,41 @@ salesRouter.post("/", async (req, res, next) => {
       let remaining = line.quantity;
       let lineCost = 0;
 
-      for (const receipt of receipts) {
-        if (remaining <= 0) break;
-        const receiptId = receipt._id.toString();
-        const available = stagedReceiptRemaining.has(receiptId)
-          ? stagedReceiptRemaining.get(receiptId)
-          : receipt.remainingQuantity;
-        if (available <= 0) continue;
+      const planned = planReceiptConsumption({
+        receipts,
+        requestedQuantity: line.quantity,
+        stagedRemainingByReceiptId: stagedReceiptRemaining,
+        plannedDeductionsByReceiptId: plannedDeductions,
+      });
+      remaining = planned.remaining;
+      lineCost = roundMoney(planned.lineCost);
 
-        const useQty = Math.min(available, remaining);
-        stagedReceiptRemaining.set(receiptId, available - useQty);
-        touchedReceipts.set(receiptId, receipt);
-        remaining -= useQty;
-        lineCost += useQty * receipt.unitCost;
-      }
-
-      if (remaining > 0) {
+      if (remaining > 1e-9) {
         const err = new Error(`Not enough stock for ${item.name}`);
         err.status = 400;
         throw err;
       }
 
-      const unitPrice = Number(item.sellingPrice ?? 0);
-      const lineTotal = line.quantity * unitPrice;
-      totalRevenue += lineTotal;
-      totalCost += lineCost;
+      const unitPrice = roundMoney(item.sellingPrice ?? 0);
+      const lineTotal = roundMoney(line.quantity * unitPrice);
+      totalRevenue = roundMoney(totalRevenue + lineTotal);
+      totalCost = roundMoney(totalCost + lineCost);
 
       saleItems.push({
         item: item._id,
         quantity: line.quantity,
         unitPrice,
-        unitCost: lineCost / line.quantity,
+        unitCost: roundNumber(lineCost / line.quantity, 4),
         lineTotal,
         lineCost,
       });
     }
 
-    if (touchedReceipts.size > 0) {
-      const ops = [];
-      for (const [receiptId, receipt] of touchedReceipts.entries()) {
-        ops.push({
-          updateOne: {
-            filter: { _id: receipt._id },
-            update: { $set: { remainingQuantity: stagedReceiptRemaining.get(receiptId) } },
-          },
-        });
-      }
-      await StockReceipt.bulkWrite(ops);
+    if (plannedDeductions.size > 0) {
+      appliedDeductions = await applyStockDeductions({
+        stockReceiptModel: StockReceipt,
+        plannedDeductionsByReceiptId: plannedDeductions,
+      });
     }
 
     const sale = await Sale.create([
@@ -195,15 +175,24 @@ salesRouter.post("/", async (req, res, next) => {
         items: saleItems,
         totalRevenue,
         totalCost,
-        profit: totalRevenue - totalCost,
+        profit: roundMoney(totalRevenue - totalCost),
         soldAt: new Date(),
         createdBy: req.user._id,
         notes: payload.notes,
       },
     ]);
 
+    appliedDeductions = [];
     res.json({ sale: sale[0] });
   } catch (err) {
+    try {
+      await rollbackStockDeductions({
+        stockReceiptModel: StockReceipt,
+        appliedDeductions,
+      });
+    } catch (rollbackErr) {
+      console.error("Failed to rollback stock deductions for sale:", rollbackErr);
+    }
     next(err);
   }
 });

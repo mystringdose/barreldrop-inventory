@@ -2,27 +2,17 @@ import express from "express";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { Sale } from "../models/Sale.js";
 import { Credit } from "../models/Credit.js";
+import { buildDateRange } from "../lib/dateRange.js";
+import { roundNumber } from "../lib/money.js";
 
 export const reportsRouter = express.Router();
 
 reportsRouter.use(requireAuth);
 
-function buildDateRange(start, end) {
-  const range = {};
-  if (start) range.$gte = new Date(start);
-  if (end) {
-    // Make date-only end values inclusive for the whole UTC day.
-    const d = new Date(end);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(end)) d.setUTCHours(23, 59, 59, 999);
-    range.$lte = d;
-  }
-  return Object.keys(range).length ? range : null;
-}
-
 reportsRouter.get("/sales", async (req, res, next) => {
   try {
-    const { start, end, user } = req.query;
-    const dateRange = buildDateRange(start, end);
+    const { start, end, user, tzOffsetMinutes } = req.query;
+    const dateRange = buildDateRange({ start, end, tzOffsetMinutes });
 
     const query = {};
     if (dateRange) query.soldAt = dateRange;
@@ -42,8 +32,8 @@ reportsRouter.get("/sales", async (req, res, next) => {
 
 reportsRouter.get("/profit-loss", requireRole("admin"), async (req, res, next) => {
   try {
-    const { start, end } = req.query;
-    const dateRange = buildDateRange(start, end);
+    const { start, end, tzOffsetMinutes } = req.query;
+    const dateRange = buildDateRange({ start, end, tzOffsetMinutes });
 
     const match = dateRange ? { soldAt: dateRange } : {};
     const totals = await Sale.aggregate([
@@ -67,8 +57,8 @@ reportsRouter.get("/profit-loss", requireRole("admin"), async (req, res, next) =
 
 reportsRouter.get("/credits", async (req, res, next) => {
   try {
-    const { start, end, status = "all", user } = req.query;
-    const dateRange = buildDateRange(start, end);
+    const { start, end, status = "all", user, tzOffsetMinutes } = req.query;
+    const dateRange = buildDateRange({ start, end, tzOffsetMinutes });
 
     const query = {};
     if (dateRange) query.creditedAt = dateRange;
@@ -117,6 +107,18 @@ reportsRouter.get("/credits", async (req, res, next) => {
       totalConvertedAmount: 0,
       outstandingAmount: 0,
     };
+
+    const totalCredits = Number(summary.totalCredits || 0);
+    const totalCreditedAmount = Number(summary.totalCreditedAmount || 0);
+    const convertedCredits = Number(summary.convertedCredits || 0);
+    const totalConvertedAmount = Number(summary.totalConvertedAmount || 0);
+
+    summary.countConversionRatePct = totalCredits > 0
+      ? roundNumber((convertedCredits / totalCredits) * 100, 2)
+      : 0;
+    summary.valueConversionRatePct = totalCreditedAmount > 0
+      ? roundNumber((totalConvertedAmount / totalCreditedAmount) * 100, 2)
+      : 0;
 
     res.json({ summary, credits });
   } catch (err) {

@@ -5,6 +5,7 @@ process.env.NODE_ENV = "test";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import request from "supertest";
+import { jest } from "@jest/globals";
 import app from "../src/app.js";
 import { User } from "../src/models/User.js";
 import { Item } from "../src/models/Item.js";
@@ -61,9 +62,9 @@ test("items cursor pagination works", async () => {
   expect(res2.body.items[0].name).toBe("Charlie");
 });
 
-test("non-admin user can create an item", async () => {
+test("non-admin user cannot create an item", async () => {
   const passwordHash = await User.hashPassword("secret123");
-  const normalUser = await User.create({
+  await User.create({
     name: "Normal User",
     email: "user@example.com",
     passwordHash,
@@ -76,10 +77,9 @@ test("non-admin user can create an item", async () => {
   const res = await userAgent
     .post("/items")
     .send({ name: "User Item", sku: "USR-1", category: "wine", sellingPrice: 12.5 })
-    .expect(200);
+    .expect(403);
 
-  expect(res.body.item.name).toBe("User Item");
-  expect(res.body.item.createdBy.toString()).toBe(normalUser._id.toString());
+  expect(res.body.error).toBe("Forbidden");
 });
 
 test("duplicate sku is rejected", async () => {
@@ -109,7 +109,7 @@ test("cognac category is accepted", async () => {
   expect(res.body.item.category).toBe("cognac");
 });
 
-test("non-admin user can edit an item", async () => {
+test("non-admin user cannot edit an item", async () => {
   const passwordHash = await User.hashPassword("secret123");
   const normalUser = await User.create({
     name: "Editor User",
@@ -131,10 +131,43 @@ test("non-admin user can edit an item", async () => {
   const res = await userAgent
     .patch(`/items/${item._id}`)
     .send({ name: "Edited Name", sellingPrice: 25.0 })
+    .expect(403);
+
+  expect(res.body.error).toBe("Forbidden");
+  const fresh = await Item.findById(item._id).lean();
+  expect(fresh.name).toBe("Editable");
+});
+
+test("non-admin user can add stock receipt", async () => {
+  const passwordHash = await User.hashPassword("secret123");
+  const normalUser = await User.create({
+    name: "Stock User",
+    email: "stocker@example.com",
+    passwordHash,
+    role: "user",
+  });
+
+  const item = await Item.create({
+    name: "Stockable",
+    sku: "STOCK-1",
+    sellingPrice: 10,
+    createdBy: adminUser._id,
+  });
+
+  const userAgent = request.agent(app);
+  await userAgent.post("/auth/login").send({ email: "stocker@example.com", password: "secret123" }).expect(200);
+
+  const res = await userAgent
+    .post("/stock-receipts")
+    .field("itemId", item._id.toString())
+    .field("quantity", "3")
+    .field("unitCost", "4.55")
+    .attach("invoice", Buffer.from("invoice"), "invoice.txt")
     .expect(200);
 
-  expect(res.body.item.name).toBe("Edited Name");
-  expect(res.body.item.sellingPrice).toBe(25);
+  expect(res.body.receipt.item.toString()).toBe(item._id.toString());
+  expect(res.body.receipt.createdBy.toString()).toBe(normalUser._id.toString());
+  expect(res.body.receipt.unitCost).toBe(4.55);
 });
 
 test("sale uses item selling price and ignores client-provided unit price", async () => {
@@ -162,6 +195,71 @@ test("sale uses item selling price and ignores client-provided unit price", asyn
 
   expect(res.body.sale.items[0].unitPrice).toBe(15);
   expect(res.body.sale.totalRevenue).toBe(30);
+});
+
+test("sale creation rolls back stock when sale write fails", async () => {
+  const item = await Item.create({
+    name: "Rollback Sale Item",
+    sku: "ROLL-SALE-1",
+    sellingPrice: 18,
+    createdBy: adminUser._id,
+  });
+  const receipt = await StockReceipt.create({
+    item: item._id,
+    quantity: 5,
+    remainingQuantity: 5,
+    unitCost: 9,
+    createdBy: adminUser._id,
+  });
+
+  const createSpy = jest.spyOn(Sale, "create").mockRejectedValueOnce(new Error("sale write failed"));
+
+  await agent
+    .post("/sales")
+    .send({
+      items: [{ itemId: item._id.toString(), quantity: 2 }],
+    })
+    .expect(500);
+
+  createSpy.mockRestore();
+
+  const reloaded = await StockReceipt.findById(receipt._id).lean();
+  expect(reloaded.remainingQuantity).toBe(5);
+});
+
+test("concurrent sales requests do not oversell stock", async () => {
+  const item = await Item.create({
+    name: "Concurrent Sale Item",
+    sku: "CON-SALE-1",
+    sellingPrice: 11,
+    createdBy: adminUser._id,
+  });
+  const receipt = await StockReceipt.create({
+    item: item._id,
+    quantity: 1,
+    remainingQuantity: 1,
+    unitCost: 4,
+    createdBy: adminUser._id,
+  });
+
+  const payload = {
+    items: [{ itemId: item._id.toString(), quantity: 1 }],
+  };
+
+  const [first, second] = await Promise.all([
+    agent.post("/sales").send(payload),
+    agent.post("/sales").send(payload),
+  ]);
+
+  const statuses = [first.status, second.status];
+  expect(statuses.filter((status) => status === 200).length).toBe(1);
+  expect(statuses.some((status) => status === 400 || status === 409)).toBe(true);
+
+  const saleCount = await Sale.countDocuments({});
+  expect(saleCount).toBe(1);
+
+  const reloaded = await StockReceipt.findById(receipt._id).lean();
+  expect(reloaded.remainingQuantity).toBe(0);
 });
 
 test("failed multi-line sale does not persist staged stock deductions", async () => {
@@ -244,6 +342,37 @@ test("creating credit deducts stock but does not create a sale", async () => {
   expect(reloadedReceipt.remainingQuantity).toBe(3);
 });
 
+test("credit creation rolls back stock when credit write fails", async () => {
+  const item = await Item.create({
+    name: "Rollback Credit Item",
+    sku: "ROLL-CRD-1",
+    sellingPrice: 21,
+    createdBy: adminUser._id,
+  });
+  const receipt = await StockReceipt.create({
+    item: item._id,
+    quantity: 5,
+    remainingQuantity: 5,
+    unitCost: 8,
+    createdBy: adminUser._id,
+  });
+
+  const createSpy = jest.spyOn(Credit, "create").mockRejectedValueOnce(new Error("credit write failed"));
+
+  await agent
+    .post("/credits")
+    .send({
+      customerName: "Rollback Customer",
+      items: [{ itemId: item._id.toString(), quantity: 2 }],
+    })
+    .expect(500);
+
+  createSpy.mockRestore();
+
+  const reloaded = await StockReceipt.findById(receipt._id).lean();
+  expect(reloaded.remainingQuantity).toBe(5);
+});
+
 test("converting credit creates sale and does not deduct stock again", async () => {
   const item = await Item.create({
     name: "Credit Convert Item",
@@ -285,6 +414,88 @@ test("converting credit creates sale and does not deduct stock again", async () 
   expect(reloadedReceipt.remainingQuantity).toBe(4);
 });
 
+test("converted sale keeps original credit owner as createdBy", async () => {
+  const passwordHash = await User.hashPassword("secret123");
+  const normalUser = await User.create({
+    name: "Credit Owner",
+    email: "credit-owner@example.com",
+    passwordHash,
+    role: "user",
+  });
+
+  const item = await Item.create({
+    name: "Ownership Item",
+    sku: "OWN-CRD-1",
+    sellingPrice: 13,
+    createdBy: adminUser._id,
+  });
+  await StockReceipt.create({
+    item: item._id,
+    quantity: 5,
+    remainingQuantity: 5,
+    unitCost: 5,
+    createdBy: adminUser._id,
+  });
+
+  const userAgent = request.agent(app);
+  await userAgent.post("/auth/login").send({ email: "credit-owner@example.com", password: "secret123" }).expect(200);
+
+  const created = await userAgent
+    .post("/credits")
+    .send({
+      customerName: "Ownership Customer",
+      items: [{ itemId: item._id.toString(), quantity: 1 }],
+    })
+    .expect(200);
+
+  const converted = await agent.post(`/credits/${created.body.credit._id}/convert`).expect(200);
+  const sale = await Sale.findById(converted.body.saleId).lean();
+  expect(sale.createdBy.toString()).toBe(normalUser._id.toString());
+});
+
+test("concurrent credit conversions only create one sale", async () => {
+  const item = await Item.create({
+    name: "Concurrent Convert Item",
+    sku: "CON-CRD-1",
+    sellingPrice: 15,
+    createdBy: adminUser._id,
+  });
+  await StockReceipt.create({
+    item: item._id,
+    quantity: 5,
+    remainingQuantity: 5,
+    unitCost: 6,
+    createdBy: adminUser._id,
+  });
+
+  const created = await agent
+    .post("/credits")
+    .send({
+      customerName: "Concurrent Customer",
+      items: [{ itemId: item._id.toString(), quantity: 1 }],
+    })
+    .expect(200);
+
+  const creditId = created.body.credit._id;
+
+  const [first, second] = await Promise.all([
+    agent.post(`/credits/${creditId}/convert`),
+    agent.post(`/credits/${creditId}/convert`),
+  ]);
+
+  const statuses = [first.status, second.status];
+  expect(statuses.filter((status) => status === 200).length).toBe(1);
+  expect(statuses.some((status) => status === 400 || status === 409)).toBe(true);
+
+  const saleCount = await Sale.countDocuments({});
+  expect(saleCount).toBe(1);
+
+  const credit = await Credit.findById(creditId).lean();
+  expect(credit.status).toBe("converted");
+  expect(credit.convertedSale).toBeTruthy();
+  expect(credit.conversionInProgress).toBe(false);
+});
+
 test("sales date filter and cursor works", async () => {
   // Create two sales: one today and one yesterday
   const item = await Item.create({ name: "X", sku: "X1", createdBy: adminUser._id });
@@ -301,6 +512,67 @@ test("sales date filter and cursor works", async () => {
   const today = new Date().toISOString().slice(0, 10);
   const res = await agent.get(`/sales?start=${today}&end=${today}&limit=10`).expect(200);
   expect(res.body.sales.length).toBeGreaterThanOrEqual(1);
+});
+
+test("sales date-only filter respects provided timezone offset", async () => {
+  const item = await Item.create({ name: "TZ Item", sku: "TZ-1", createdBy: adminUser._id });
+  await Sale.create({
+    items: [{ item: item._id, quantity: 1, unitPrice: 3, unitCost: 1, lineCost: 1, lineTotal: 3 }],
+    totalRevenue: 3,
+    totalCost: 1,
+    profit: 2,
+    soldAt: new Date("2025-01-01T02:00:00.000Z"),
+    createdBy: adminUser._id,
+  });
+
+  const res = await agent
+    .get("/sales?start=2024-12-31&end=2024-12-31&tzOffsetMinutes=300&limit=10")
+    .expect(200);
+
+  expect(res.body.sales.length).toBe(1);
+});
+
+test("credit report exposes conversion rates", async () => {
+  const item = await Item.create({
+    name: "Rate Item",
+    sku: "RATE-1",
+    sellingPrice: 10,
+    createdBy: adminUser._id,
+  });
+  await StockReceipt.create({
+    item: item._id,
+    quantity: 20,
+    remainingQuantity: 20,
+    unitCost: 4,
+    createdBy: adminUser._id,
+  });
+
+  const openCredit = await agent
+    .post("/credits")
+    .send({
+      customerName: "Open Customer",
+      items: [{ itemId: item._id.toString(), quantity: 1 }],
+    })
+    .expect(200);
+
+  const convertedCredit = await agent
+    .post("/credits")
+    .send({
+      customerName: "Converted Customer",
+      items: [{ itemId: item._id.toString(), quantity: 2 }],
+    })
+    .expect(200);
+
+  await agent.post(`/credits/${convertedCredit.body.credit._id}/convert`).expect(200);
+
+  const res = await agent.get("/reports/credits").expect(200);
+  expect(res.body.summary.totalCredits).toBe(2);
+  expect(res.body.summary.openCredits).toBe(1);
+  expect(res.body.summary.convertedCredits).toBe(1);
+  expect(res.body.summary.countConversionRatePct).toBe(50);
+  expect(res.body.summary.valueConversionRatePct).toBe(66.67);
+  expect(openCredit.body.credit.totalAmount).toBe(10);
+  expect(convertedCredit.body.credit.totalAmount).toBe(20);
 });
 
 test("stock receipts cursor pagination works", async () => {

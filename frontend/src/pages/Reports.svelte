@@ -11,6 +11,13 @@
   let error = "";
   let loading = false;
 
+  function withTimezone(params = {}) {
+    return {
+      ...params,
+      tzOffsetMinutes: new Date().getTimezoneOffset(),
+    };
+  }
+
   async function loadReports() {
     loading = true;
     error = "";
@@ -18,16 +25,17 @@
       const params = {};
       if (start) params.start = start;
       if (end) params.end = end;
+      const requestParams = withTimezone(params);
 
-      const salesRes = await api.salesReport(params);
+      const salesRes = await api.salesReport(requestParams);
       sales = salesRes.sales;
 
       if ($authStore.user?.role === "admin") {
-        const profitRes = await api.profitLoss(params);
+        const profitRes = await api.profitLoss(requestParams);
         profitLoss = profitRes.profitLoss;
       }
 
-      const creditRes = await api.creditReport(params);
+      const creditRes = await api.creditReport(requestParams);
       creditSummary = creditRes.summary;
       creditRows = creditRes.credits || [];
     } catch (err) {
@@ -112,6 +120,16 @@
         <div>
           <p class="text-slate-500">Converted Credits</p>
           <p class="text-lg font-semibold">{creditSummary.convertedCredits || 0}</p>
+        </div>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 text-sm mt-3">
+        <div>
+          <p class="text-slate-500">Count Conversion</p>
+          <p class="text-lg font-semibold">{Number(creditSummary.countConversionRatePct || 0).toFixed(2)}%</p>
+        </div>
+        <div>
+          <p class="text-slate-500">Value Conversion</p>
+          <p class="text-lg font-semibold">{Number(creditSummary.valueConversionRatePct || 0).toFixed(2)}%</p>
         </div>
       </div>
     </div>

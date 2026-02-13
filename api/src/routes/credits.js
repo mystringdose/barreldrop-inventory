@@ -6,6 +6,9 @@ import { Credit } from "../models/Credit.js";
 import { Item } from "../models/Item.js";
 import { Sale } from "../models/Sale.js";
 import { StockReceipt } from "../models/StockReceipt.js";
+import { buildDateRange } from "../lib/dateRange.js";
+import { roundMoney, roundNumber } from "../lib/money.js";
+import { applyStockDeductions, planReceiptConsumption, rollbackStockDeductions } from "../lib/stock.js";
 import { requireAuth } from "../middleware/auth.js";
 import { validate } from "../lib/validate.js";
 
@@ -21,7 +24,7 @@ const createCreditSchema = z.object({
     .array(
       z.object({
         itemId: z.string().min(1),
-        quantity: z.number().min(1),
+        quantity: z.coerce.number().positive().finite(),
       })
     )
     .min(1),
@@ -53,7 +56,7 @@ function andQuery(base, extra) {
 
 creditRouter.get("/", async (req, res, next) => {
   try {
-    const { limit = 20, cursor, direction = "next", start, end, status = "all", q = "" } = req.query;
+    const { limit = 20, cursor, direction = "next", start, end, status = "all", q = "", tzOffsetMinutes } = req.query;
     const lim = Math.min(200, Number(limit) || 20);
 
     let baseQuery = req.user.role === "admin" ? {} : { createdBy: req.user._id };
@@ -62,21 +65,8 @@ creditRouter.get("/", async (req, res, next) => {
       baseQuery.status = status;
     }
 
-    if (start || end) {
-      const creditedAt = {};
-      if (start) {
-        const s = new Date(start);
-        if (!isNaN(s)) creditedAt.$gte = s;
-      }
-      if (end) {
-        let e = new Date(end);
-        if (!isNaN(e)) {
-          if (/^\d{4}-\d{2}-\d{2}$/.test(end)) e.setUTCHours(23, 59, 59, 999);
-          creditedAt.$lte = e;
-        }
-      }
-      if (Object.keys(creditedAt).length) baseQuery.creditedAt = creditedAt;
-    }
+    const creditedAt = buildDateRange({ start, end, tzOffsetMinutes });
+    if (creditedAt) baseQuery.creditedAt = creditedAt;
 
     const search = String(q || "").trim();
     if (search) {
@@ -132,20 +122,15 @@ creditRouter.get("/", async (req, res, next) => {
 });
 
 creditRouter.post("/", async (req, res, next) => {
+  let appliedDeductions = [];
   try {
-    const payload = validate(createCreditSchema, {
-      ...req.body,
-      items: req.body.items?.map((item) => ({
-        ...item,
-        quantity: Number(item.quantity),
-      })),
-    });
+    const payload = validate(createCreditSchema, req.body);
 
     const creditItems = [];
     let totalAmount = 0;
     let totalCost = 0;
     const stagedReceiptRemaining = new Map();
-    const touchedReceipts = new Map();
+    const plannedDeductions = new Map();
 
     for (const line of payload.items) {
       if (!mongoose.isValidObjectId(line.itemId)) {
@@ -174,53 +159,41 @@ creditRouter.post("/", async (req, res, next) => {
       let remaining = line.quantity;
       let lineCost = 0;
 
-      for (const receipt of receipts) {
-        if (remaining <= 0) break;
-        const receiptId = receipt._id.toString();
-        const available = stagedReceiptRemaining.has(receiptId)
-          ? stagedReceiptRemaining.get(receiptId)
-          : receipt.remainingQuantity;
-        if (available <= 0) continue;
+      const planned = planReceiptConsumption({
+        receipts,
+        requestedQuantity: line.quantity,
+        stagedRemainingByReceiptId: stagedReceiptRemaining,
+        plannedDeductionsByReceiptId: plannedDeductions,
+      });
+      remaining = planned.remaining;
+      lineCost = roundMoney(planned.lineCost);
 
-        const useQty = Math.min(available, remaining);
-        stagedReceiptRemaining.set(receiptId, available - useQty);
-        touchedReceipts.set(receiptId, receipt);
-        remaining -= useQty;
-        lineCost += useQty * receipt.unitCost;
-      }
-
-      if (remaining > 0) {
+      if (remaining > 1e-9) {
         const err = new Error(`Not enough stock for ${item.name}`);
         err.status = 400;
         throw err;
       }
 
-      const unitPrice = Number(item.sellingPrice ?? 0);
-      const lineTotal = line.quantity * unitPrice;
-      totalAmount += lineTotal;
-      totalCost += lineCost;
+      const unitPrice = roundMoney(item.sellingPrice ?? 0);
+      const lineTotal = roundMoney(line.quantity * unitPrice);
+      totalAmount = roundMoney(totalAmount + lineTotal);
+      totalCost = roundMoney(totalCost + lineCost);
 
       creditItems.push({
         item: item._id,
         quantity: line.quantity,
         unitPrice,
-        unitCost: lineCost / line.quantity,
+        unitCost: roundNumber(lineCost / line.quantity, 4),
         lineTotal,
         lineCost,
       });
     }
 
-    if (touchedReceipts.size > 0) {
-      const ops = [];
-      for (const [receiptId, receipt] of touchedReceipts.entries()) {
-        ops.push({
-          updateOne: {
-            filter: { _id: receipt._id },
-            update: { $set: { remainingQuantity: stagedReceiptRemaining.get(receiptId) } },
-          },
-        });
-      }
-      await StockReceipt.bulkWrite(ops);
+    if (plannedDeductions.size > 0) {
+      appliedDeductions = await applyStockDeductions({
+        stockReceiptModel: StockReceipt,
+        plannedDeductionsByReceiptId: plannedDeductions,
+      });
     }
 
     const created = await Credit.create([
@@ -237,8 +210,17 @@ creditRouter.post("/", async (req, res, next) => {
       },
     ]);
 
+    appliedDeductions = [];
     res.json({ credit: created[0] });
   } catch (err) {
+    try {
+      await rollbackStockDeductions({
+        stockReceiptModel: StockReceipt,
+        appliedDeductions,
+      });
+    } catch (rollbackErr) {
+      console.error("Failed to rollback stock deductions for credit:", rollbackErr);
+    }
     next(err);
   }
 });
@@ -257,7 +239,26 @@ creditRouter.post("/:id/convert", async (req, res, next) => {
     }
     if (credit.status !== "open") return res.status(400).json({ error: "Credit already converted" });
 
-    const saleItems = credit.items.map((line) => ({
+    const lockedCredit = await Credit.findOneAndUpdate(
+      {
+        _id: credit._id,
+        status: "open",
+        conversionInProgress: { $ne: true },
+      },
+      {
+        $set: { conversionInProgress: true },
+      },
+      { new: true }
+    );
+
+    if (!lockedCredit) {
+      const latest = await Credit.findById(id).select("status conversionInProgress");
+      if (!latest) return res.status(404).json({ error: "Credit not found" });
+      if (latest.status !== "open") return res.status(400).json({ error: "Credit already converted" });
+      return res.status(409).json({ error: "Credit conversion already in progress" });
+    }
+
+    const saleItems = lockedCredit.items.map((line) => ({
       item: line.item,
       quantity: line.quantity,
       unitPrice: line.unitPrice,
@@ -266,29 +267,75 @@ creditRouter.post("/:id/convert", async (req, res, next) => {
       lineCost: line.lineCost,
     }));
 
-    const notes = credit.notes
-      ? `Converted from credit ${credit._id}: ${credit.notes}`
-      : `Converted from credit ${credit._id}`;
+    const notes = lockedCredit.notes
+      ? `Converted from credit ${lockedCredit._id}: ${lockedCredit.notes}`
+      : `Converted from credit ${lockedCredit._id}`;
 
-    const created = await Sale.create([
-      {
-        items: saleItems,
-        totalRevenue: credit.totalAmount,
-        totalCost: credit.totalCost,
-        profit: credit.totalAmount - credit.totalCost,
-        soldAt: new Date(),
-        createdBy: req.user._id,
-        notes,
-      },
-    ]);
+    let createdSale = null;
+    let conversionFinalized = false;
 
-    credit.status = "converted";
-    credit.convertedAt = new Date();
-    credit.convertedSale = created[0]._id;
-    credit.convertedBy = req.user._id;
-    await credit.save();
+    try {
+      const created = await Sale.create([
+        {
+          items: saleItems,
+          totalRevenue: roundMoney(lockedCredit.totalAmount),
+          totalCost: roundMoney(lockedCredit.totalCost),
+          profit: roundMoney(lockedCredit.totalAmount - lockedCredit.totalCost),
+          soldAt: new Date(),
+          createdBy: lockedCredit.createdBy,
+          notes,
+        },
+      ]);
+      createdSale = created[0];
 
-    res.json({ creditId: credit._id, saleId: created[0]._id });
+      const converted = await Credit.findOneAndUpdate(
+        {
+          _id: lockedCredit._id,
+          status: "open",
+          conversionInProgress: true,
+        },
+        {
+          $set: {
+            status: "converted",
+            convertedAt: new Date(),
+            convertedSale: createdSale._id,
+            convertedBy: req.user._id,
+            conversionInProgress: false,
+          },
+        },
+        { new: true }
+      );
+
+      if (!converted) {
+        const conflictErr = new Error("Credit conversion state changed. Please retry.");
+        conflictErr.status = 409;
+        throw conflictErr;
+      }
+
+      conversionFinalized = true;
+      res.json({ creditId: converted._id, saleId: createdSale._id });
+    } catch (err) {
+      if (!conversionFinalized && createdSale?._id) {
+        try {
+          await Sale.deleteOne({ _id: createdSale._id });
+        } catch (cleanupErr) {
+          console.error("Failed to clean up sale after credit conversion error:", cleanupErr);
+        }
+      }
+
+      if (!conversionFinalized) {
+        try {
+          await Credit.updateOne(
+            { _id: lockedCredit._id, status: "open", conversionInProgress: true },
+            { $set: { conversionInProgress: false } }
+          );
+        } catch (unlockErr) {
+          console.error("Failed to release credit conversion lock:", unlockErr);
+        }
+      }
+
+      throw err;
+    }
   } catch (err) {
     next(err);
   }

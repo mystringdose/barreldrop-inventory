@@ -190,6 +190,7 @@
     error = "";
     try {
       const params = { limit, status };
+      params.tzOffsetMinutes = new Date().getTimezoneOffset();
       if (cursorParam) params.cursor = cursorParam;
       if (direction) params.direction = direction;
       if (start) params.start = start;

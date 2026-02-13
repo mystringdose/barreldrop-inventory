@@ -6,6 +6,7 @@ import { parse } from "csv-parse/sync";
 import { Item } from "../models/Item.js";
 import { ITEM_CATEGORIES } from "../constants/item.js";
 import { StockReceipt } from "../models/StockReceipt.js";
+import { roundMoney, roundNumber } from "../lib/money.js";
 import { validate } from "../lib/validate.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -19,10 +20,10 @@ const itemSchema = z.object({
   sku: z.string().min(2),
   category: categoryEnum.optional(),
   size: z.string().optional(),
-  abv: z.number().min(0).max(100).optional(),
-  buyingPrice: z.number().min(0).optional(),
-  sellingPrice: z.number().min(0).optional(),
-  reorderLevel: z.number().min(0).optional(),
+  abv: z.number().min(0).max(100).finite().optional(),
+  buyingPrice: z.number().min(0).finite().optional(),
+  sellingPrice: z.number().min(0).finite().optional(),
+  reorderLevel: z.number().min(0).finite().optional(),
 });
 
 const statusSchema = z.object({
@@ -33,6 +34,15 @@ itemRouter.use(requireAuth);
 
 function normalizeSku(sku) {
   return String(sku || "").trim().toUpperCase();
+}
+
+function normalizeItemValues(data) {
+  const normalized = { ...data };
+  if (normalized.abv !== undefined) normalized.abv = roundNumber(normalized.abv, 2);
+  if (normalized.buyingPrice !== undefined) normalized.buyingPrice = roundMoney(normalized.buyingPrice);
+  if (normalized.sellingPrice !== undefined) normalized.sellingPrice = roundMoney(normalized.sellingPrice);
+  if (normalized.reorderLevel !== undefined) normalized.reorderLevel = roundNumber(normalized.reorderLevel, 3);
+  return normalized;
 }
 
 function isDuplicateSkuError(err) {
@@ -138,9 +148,9 @@ itemRouter.get("/", async (req, res, next) => {
   }
 });
 
-itemRouter.post("/", async (req, res, next) => {
+itemRouter.post("/", requireRole("admin"), async (req, res, next) => {
   try {
-    const data = validate(itemSchema, req.body);
+    const data = normalizeItemValues(validate(itemSchema, req.body));
     data.sku = normalizeSku(data.sku);
 
     const existing = await Item.findOne({ sku: data.sku }).lean();
@@ -183,19 +193,20 @@ itemRouter.post("/bulk", requireRole("admin"), upload.single("file"), async (req
         sku: row.sku,
         category: row.category || undefined,
         size: row.size || undefined,
-        abv: row.abv ? Number(row.abv) : undefined,
-        buyingPrice: row.buyingPrice ? Number(row.buyingPrice) : undefined,
-        sellingPrice: row.sellingPrice ? Number(row.sellingPrice) : undefined,
-        reorderLevel: row.reorderLevel ? Number(row.reorderLevel) : undefined,
+        abv: row.abv !== undefined && row.abv !== "" ? Number(row.abv) : undefined,
+        buyingPrice: row.buyingPrice !== undefined && row.buyingPrice !== "" ? Number(row.buyingPrice) : undefined,
+        sellingPrice: row.sellingPrice !== undefined && row.sellingPrice !== "" ? Number(row.sellingPrice) : undefined,
+        reorderLevel: row.reorderLevel !== undefined && row.reorderLevel !== "" ? Number(row.reorderLevel) : undefined,
       });
-      data.sku = normalizeSku(data.sku);
+      const normalized = normalizeItemValues(data);
+      normalized.sku = normalizeSku(normalized.sku);
 
-      const existing = await Item.findOne({ sku: data.sku });
+      const existing = await Item.findOne({ sku: normalized.sku });
       if (existing) {
-        await Item.updateOne({ _id: existing._id }, data);
+        await Item.updateOne({ _id: existing._id }, normalized);
         updated += 1;
       } else {
-        await Item.create({ ...data, createdBy: req.user._id });
+        await Item.create({ ...normalized, createdBy: req.user._id });
         created += 1;
       }
     }
@@ -206,9 +217,9 @@ itemRouter.post("/bulk", requireRole("admin"), upload.single("file"), async (req
   }
 });
 
-itemRouter.patch("/:id", async (req, res, next) => {
+itemRouter.patch("/:id", requireRole("admin"), async (req, res, next) => {
   try {
-    const data = validate(itemSchema.partial(), req.body);
+    const data = normalizeItemValues(validate(itemSchema.partial(), req.body));
     if (data.sku !== undefined) {
       data.sku = normalizeSku(data.sku);
       const existing = await Item.findOne({ sku: data.sku, _id: { $ne: req.params.id } }).lean();
@@ -228,7 +239,7 @@ itemRouter.patch("/:id", async (req, res, next) => {
   }
 });
 
-itemRouter.patch("/:id/status", async (req, res, next) => {
+itemRouter.patch("/:id/status", requireRole("admin"), async (req, res, next) => {
   try {
     const data = validate(statusSchema, req.body);
     const item = await Item.findByIdAndUpdate(req.params.id, { status: data.status }, { new: true });

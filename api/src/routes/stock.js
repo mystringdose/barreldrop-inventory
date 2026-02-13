@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 
 import { StockReceipt } from "../models/StockReceipt.js";
 import { Item } from "../models/Item.js";
+import { roundMoney } from "../lib/money.js";
 import { validate } from "../lib/validate.js";
 import { createDownloadUrl, createUploadUrl, s3Enabled } from "../lib/s3.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -15,8 +16,8 @@ const upload = multer({ dest: "./uploads" });
 
 const receiptLineSchema = z.object({
   itemId: z.string().min(1),
-  quantity: z.coerce.number().min(1),
-  unitCost: z.coerce.number().min(0),
+  quantity: z.coerce.number().positive().finite(),
+  unitCost: z.coerce.number().min(0).finite(),
   supplier: z.string().optional(),
   purchasedAt: z.string().optional(),
 });
@@ -191,7 +192,7 @@ stockRouter.post("/", upload.single("invoice"), async (req, res, next) => {
         item: line.itemId,
         quantity: line.quantity,
         remainingQuantity: line.quantity,
-        unitCost: line.unitCost,
+        unitCost: roundMoney(line.unitCost),
         invoiceFile: req.file?.filename,
         invoiceKey,
         invoiceStorage: usingS3 ? "s3" : "local",
